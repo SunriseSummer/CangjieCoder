@@ -28,6 +28,20 @@ class ProjectBootstrapTest {
     }
 
     @TestCase
+    func bootstrapJsonParserCreatesMissingParents() {
+        let repoRoot = getWorkingDirectory().toString()
+        let nestedRoot = "${repoRoot}/target/generated/nested/bootstrap-json-parser-test"
+        removeIfExists("${repoRoot}/target/generated", recursive: true)
+
+        let message = bootstrapJsonParserProject(repoRoot, repoRoot, "target/generated/nested/bootstrap-json-parser-test")
+        @Expect(message.contains("Bootstrapped JsonParser example"))
+        @Expect(exists("${nestedRoot}/cjpm.toml"))
+        @Expect(exists("${nestedRoot}/src/json_parser.cj"))
+
+        removeIfExists("${repoRoot}/target/generated", recursive: true)
+    }
+
+    @TestCase
     func extractLspBodiesParsesFramedResponses() {
         let payload = "${encodeLspFrame("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"capabilities\":{}}}")}${encodeLspFrame("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}")}"
         let bodies = extractLspBodies(payload)

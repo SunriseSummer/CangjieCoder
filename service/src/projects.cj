@@ -60,14 +60,21 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     let fullPath = resolveRepoPath(repoRoot, path)
     let plannedPath = Path(fullPath)
     let parentPath = plannedPath.parent
-    if (parentPath.toString().isEmpty() || !exists(parentPath.toString())) {
+    if (parentPath.toString().isEmpty()) {
         throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
     }
-    let canonicalParent = canonicalize(parentPath).toString()
+    var existingParent = parentPath.toString()
+    while (!existingParent.isEmpty() && !exists(existingParent)) {
+        existingParent = Path(existingParent).parent.toString()
+    }
+    if (existingParent.isEmpty()) {
+        throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
+    }
+    let canonicalParent = canonicalize(existingParent).toString()
     if (!canonicalParent.startsWith(canonicalRoot)) {
         throw IllegalArgumentException("Path escapes repository root: ${path}")
     }
-    return "${canonicalParent}/${plannedPath.fileName}"
+    return fullPath
 }
 
 func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
@@ -80,6 +87,10 @@ func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, dest
         case Some(project) =>
             if (!exists(project.templatePath)) {
                 return "JsonParser example template is missing: ${project.templatePath}"
+            }
+            let outputParent = Path(outputPath).parent.toString()
+            if (!outputParent.isEmpty() && !exists(outputParent)) {
+                Directory.create(outputParent, recursive: true)
             }
             copy(project.templatePath, to: outputPath)
             removeIfExists("${outputPath}/target", recursive: true)
