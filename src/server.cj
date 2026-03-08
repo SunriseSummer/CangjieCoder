@@ -1,6 +1,7 @@
 package cangjiecoder
 
 import std.collection.*
+import std.convert.*
 import std.env.*
 import std.io.*
 import stdx.encoding.json.*
@@ -90,6 +91,16 @@ func lspStatusJson(status: LspStatus): String {
     return root.toString()
 }
 
+func lspProbeJson(result: LspProbeResult): String {
+    let root = JsonObject()
+    root.put("available", JsonBool(result.available))
+    root.put("success", JsonBool(result.success))
+    root.put("command", JsonString(result.command))
+    root.put("summary", JsonString(result.summary))
+    root.put("responsePreview", JsonString(result.responsePreview))
+    return root.toString()
+}
+
 func jsonRpcResult(idJson: String, resultJson: String): String {
     return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
 }
@@ -99,49 +110,6 @@ func jsonRpcError(idJson: String, code: Int64, message: String): String {
     error.put("code", JsonInt(code))
     error.put("message", JsonString(message))
     return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"error\":${error.toString()}}"
-}
-
-func availableToolsJson(): String {
-    let tools = JsonArray()
-
-    let searchSkills = JsonObject()
-    searchSkills.put("name", JsonString("skills.search"))
-    searchSkills.put("description", JsonString("Search built-in Cangjie skills stored in .github/skills."))
-    tools.add(searchSkills)
-
-    let readFile = JsonObject()
-    readFile.put("name", JsonString("workspace.read_file"))
-    readFile.put("description", JsonString("Read a file inside the repository root."))
-    tools.add(readFile)
-
-    let replaceText = JsonObject()
-    replaceText.put("name", JsonString("workspace.replace_text"))
-    replaceText.put("description", JsonString("Replace exactly one matched text block inside an existing file."))
-    tools.add(replaceText)
-
-    let analyze = JsonObject()
-    analyze.put("name", JsonString("cangjie.analyze_file"))
-    analyze.put("description", JsonString("Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file."))
-    tools.add(analyze)
-
-    let listExamples = JsonObject()
-    listExamples.put("name", JsonString("project.list_examples"))
-    listExamples.put("description", JsonString("List built-in Cangjie example projects that can be bootstrapped into the workspace."))
-    tools.add(listExamples)
-
-    let bootstrapProject = JsonObject()
-    bootstrapProject.put("name", JsonString("project.bootstrap_json_parser"))
-    bootstrapProject.put("description", JsonString("Copy the built-in JsonParser example project into a target workspace path."))
-    tools.add(bootstrapProject)
-
-    let lspStatus = JsonObject()
-    lspStatus.put("name", JsonString("cangjie.lsp_status"))
-    lspStatus.put("description", JsonString("Inspect whether a Cangjie LSP binary is configured or discoverable."))
-    tools.add(lspStatus)
-
-    let root = JsonObject()
-    root.put("tools", tools)
-    return root.toString()
 }
 
 func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
@@ -182,7 +150,60 @@ func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
     )
 }
 
-func callMcpTool(repoRoot: String, registry: SkillRegistry, toolName: String, args: JsonObject): String {
+func buildSystemPrompt(registry: SkillRegistry, userPrompt: String, analysis: String): String {
+    let context = registry.buildPromptContext(userPrompt, limit: 3)
+    let sections = ArrayList<String>()
+    sections.add("You are CangjieCoder, a lightweight AI coding assistant focused on Cangjie projects.")
+    sections.add("Prioritize Cangjie-specific guidance, use the local skill library before guessing, and keep edits surgical.")
+    sections.add("When the task targets Cangjie code, prefer precise file context and analyzer output to reduce token usage.")
+    if (!context.trimAscii().isEmpty()) {
+        sections.add("Relevant local skills:\n${context}")
+    }
+    if (!analysis.trimAscii().isEmpty()) {
+        sections.add("Analyzer context:\n${analysis}")
+    }
+    return String.join(sections.toArray(), delimiter: "\n\n")
+}
+
+func chatWithMemoryJson(repoRoot: String,
+                        registry: SkillRegistry,
+                        conversations: ConversationStore,
+                        provider: String,
+                        model: String,
+                        prompt: String,
+                        analyzePath: String,
+                        sessionId: String): String {
+    let session = conversations.getOrCreate(sessionId: sessionId)
+    let analysis = if (analyzePath.trimAscii().isEmpty()) {
+        ""
+    } else {
+        analyzeCangjieFile(repoRoot, analyzePath).output
+    }
+    var systemPrompt = buildSystemPrompt(registry, prompt, analysis)
+    let historyPrompt = session.buildPrompt(limit: 6)
+    if (!historyPrompt.trimAscii().isEmpty()) {
+        systemPrompt = "${systemPrompt}\n\nRecent conversation turns:\n${historyPrompt}"
+    }
+    let reply = chatWithProvider(provider, model, systemPrompt, prompt)
+    session.addTurn("user", prompt)
+    session.addTurn("assistant", reply)
+
+    let root = JsonObject()
+    root.put("sessionId", JsonString(session.sessionId))
+    root.put("provider", JsonString(provider))
+    root.put("model", JsonString(if (model.trimAscii().isEmpty()) { provider } else { model }))
+    root.put("systemPrompt", JsonString(systemPrompt))
+    root.put("historyPrompt", JsonString(historyPrompt))
+    root.put("reply", JsonString(reply))
+    root.put("turnCount", JsonInt(session.turnCount))
+    return root.toString()
+}
+
+func callMcpTool(repoRoot: String,
+                 registry: SkillRegistry,
+                 conversations: ConversationStore,
+                 toolName: String,
+                 args: JsonObject): String {
     match (toolName) {
         case "skills.search" =>
             let query = jsonField(args, "query")
@@ -212,8 +233,34 @@ func callMcpTool(repoRoot: String, registry: SkillRegistry, toolName: String, ar
             let root = JsonObject()
             root.put("message", JsonString(bootstrapJsonParserProject(repoRoot, path)))
             return root.toString()
+        case "conversation.start_session" =>
+            let session = conversations.createSession()
+            let root = JsonObject()
+            root.put("sessionId", JsonString(session.sessionId))
+            return root.toString()
+        case "conversation.get_history" =>
+            return conversations.historyJson(jsonField(args, "sessionId"))
+        case "conversation.chat" =>
+            return chatWithMemoryJson(repoRoot,
+                registry,
+                conversations,
+                jsonField(args, "provider", fallback: "kimi"),
+                jsonField(args, "model"),
+                jsonField(args, "prompt"),
+                jsonField(args, "analyzePath"),
+                jsonField(args, "sessionId"))
         case "cangjie.lsp_status" =>
             return lspStatusJson(inspectLspStatus(repoRoot))
+        case "cangjie.lsp_probe" =>
+            return lspProbeJson(probeLspServer(repoRoot))
+        case "cangjie.edit_ast_node" =>
+            let path = jsonField(args, "path")
+            let nodeType = jsonField(args, "nodeType")
+            let replacement = jsonField(args, "replacement")
+            let index = Int64.parse(jsonField(args, "index", fallback: "0"))
+            let root = JsonObject()
+            root.put("message", JsonString(editAstNode(repoRoot, path, nodeType, replacement, index: index)))
+            return root.toString()
         case _ =>
             let root = JsonObject()
             root.put("message", JsonString("Unknown tool: ${toolName}"))
@@ -221,22 +268,10 @@ func callMcpTool(repoRoot: String, registry: SkillRegistry, toolName: String, ar
     }
 }
 
-func buildSystemPrompt(registry: SkillRegistry, userPrompt: String, analysis: String): String {
-    let context = registry.buildPromptContext(userPrompt, limit: 3)
-    let sections = ArrayList<String>()
-    sections.add("You are CangjieCoder, a lightweight AI coding assistant focused on Cangjie projects.")
-    sections.add("Prioritize Cangjie-specific guidance, use the local skill library before guessing, and keep edits surgical.")
-    sections.add("When the task targets Cangjie code, prefer precise file context and analyzer output to reduce token usage.")
-    if (!context.trimAscii().isEmpty()) {
-        sections.add("Relevant local skills:\n${context}")
-    }
-    if (!analysis.trimAscii().isEmpty()) {
-        sections.add("Analyzer context:\n${analysis}")
-    }
-    return String.join(sections.toArray(), delimiter: "\n\n")
-}
-
-func handleMcpRequest(repoRoot: String, registry: SkillRegistry, body: String): String {
+func handleMcpRequest(repoRoot: String,
+                      registry: SkillRegistry,
+                      conversations: ConversationStore,
+                      body: String): String {
     let request = parseJsonObject(body)
     let idJson = match (request.get("id")) {
         case Some(value) => value.toString()
@@ -253,21 +288,27 @@ func handleMcpRequest(repoRoot: String, registry: SkillRegistry, body: String): 
             let result = JsonObject()
             let capabilities = JsonObject()
             capabilities.put("tools", JsonObject())
+            capabilities.put("prompts", JsonObject())
+            capabilities.put("resources", JsonObject())
             result.put("capabilities", capabilities)
             let serverInfo = JsonObject()
             serverInfo.put("name", JsonString("CangjieCoder"))
-            serverInfo.put("version", JsonString("0.1.0"))
+            serverInfo.put("version", JsonString("0.2.0"))
             result.put("serverInfo", serverInfo)
             return jsonRpcResult(idJson, result.toString())
+        case "ping" =>
+            return jsonRpcResult(idJson, "{\"pong\":true}")
+        case "notifications/initialized" =>
+            return jsonRpcResult(idJson, "null")
         case "tools/list" =>
-            return jsonRpcResult(idJson, availableToolsJson())
+            return jsonRpcResult(idJson, toolDefinitionsJson())
         case "tools/call" =>
             let toolName = jsonField(params, "name")
             let toolArgs = match (params.get("arguments")) {
                 case Some(value) => value.asObject()
                 case None => JsonObject()
             }
-            let content = callMcpTool(repoRoot, registry, toolName, toolArgs)
+            let content = callMcpTool(repoRoot, registry, conversations, toolName, toolArgs)
             let result = JsonObject()
             result.put("content", JsonString(content))
             result.put("isError", JsonBool(false))
@@ -279,6 +320,7 @@ func handleMcpRequest(repoRoot: String, registry: SkillRegistry, body: String): 
 
 func startServer(config: AppConfig): Unit {
     let registry = SkillRegistry(config.repoRoot)
+    let conversations = ConversationStore()
     let server = ServerBuilder().addr(config.host).port(config.port).build()
 
     server.distributor.register("/health", {
@@ -345,28 +387,58 @@ func startServer(config: AppConfig): Unit {
             .body(lspStatusJson(inspectLspStatus(config.repoRoot)))
     })
 
-    server.distributor.register("/chat", {
+    server.distributor.register("/lsp/probe", {
         ctx =>
-        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
-        let provider = jsonField(request, "provider", fallback: "kimi")
-        let model = jsonField(request, "model")
-        let prompt = jsonField(request, "prompt")
-        let analyzePath = jsonField(request, "analyzePath")
-        let analysis = if (analyzePath.trimAscii().isEmpty()) {
-            ""
-        } else {
-            analyzeCangjieFile(config.repoRoot, analyzePath).output
-        }
-        let systemPrompt = buildSystemPrompt(registry, prompt, analysis)
-        let reply = chatWithProvider(provider, model, systemPrompt, prompt)
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(lspProbeJson(probeLspServer(config.repoRoot)))
+    })
+
+    server.distributor.register("/conversations/start", {
+        ctx =>
+        let session = conversations.createSession()
         let root = JsonObject()
-        root.put("provider", JsonString(provider))
-        root.put("model", JsonString(if (model.trimAscii().isEmpty()) { provider } else { model }))
-        root.put("systemPrompt", JsonString(systemPrompt))
-        root.put("reply", JsonString(reply))
+        root.put("sessionId", JsonString(session.sessionId))
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(root.toString())
+    })
+
+    server.distributor.register("/conversations/history", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(conversations.historyJson(jsonField(request, "sessionId")))
+    })
+
+    server.distributor.register("/ast/edit", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        let root = JsonObject()
+        root.put("message", JsonString(editAstNode(config.repoRoot,
+            jsonField(request, "path"),
+            jsonField(request, "nodeType"),
+            jsonField(request, "replacement"),
+            index: Int64.parse(jsonField(request, "index", fallback: "0")))))
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(root.toString())
+    })
+
+    server.distributor.register("/chat", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(chatWithMemoryJson(config.repoRoot,
+                registry,
+                conversations,
+                jsonField(request, "provider", fallback: "kimi"),
+                jsonField(request, "model"),
+                jsonField(request, "prompt"),
+                jsonField(request, "analyzePath"),
+                jsonField(request, "sessionId")))
     })
 
     server.distributor.register("/mcp", {
@@ -374,7 +446,7 @@ func startServer(config: AppConfig): Unit {
         let body = StringReader(ctx.request.body).readToEnd()
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(handleMcpRequest(config.repoRoot, registry, body))
+            .body(handleMcpRequest(config.repoRoot, registry, conversations, body))
     })
 
     println("CangjieCoder server listening on http://${config.host}:${config.port}")

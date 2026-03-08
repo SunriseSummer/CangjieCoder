@@ -26,4 +26,12 @@ class ProjectBootstrapTest {
 
         removeIfExists(targetRoot, recursive: true)
     }
+
+    @TestCase
+    func extractLspBodiesParsesFramedResponses() {
+        let payload = "${encodeLspFrame("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"capabilities\":{}}}")}${encodeLspFrame("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}")}"
+        let bodies = extractLspBodies(payload)
+        @Expect(bodies.size, 2)
+        @Expect(bodies[0].contains("\"capabilities\""))
+    }
 }

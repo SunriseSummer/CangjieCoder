@@ -1,7 +1,11 @@
 package cangjiecoder
 
+import std.collection.*
+import std.convert.*
 import std.env.*
 import std.fs.*
+import std.io.*
+import std.process.*
 
 struct ExampleProjectSpec {
     public ExampleProjectSpec(let id: String,
@@ -15,6 +19,14 @@ struct LspStatus {
                      let command: String,
                      let summary: String,
                      let sourceHint: String) {}
+}
+
+struct LspProbeResult {
+    public LspProbeResult(let available: Bool,
+                          let success: Bool,
+                          let command: String,
+                          let summary: String,
+                          let responsePreview: String) {}
 }
 
 func listExampleProjects(repoRoot: String): Array<ExampleProjectSpec> {
@@ -110,5 +122,77 @@ func inspectLspStatus(repoRoot: String): LspStatus {
                 "No Cangjie LSP binary was detected. Configure CANGJIE_LSP_COMMAND or CANGJIE_SDK_HOME to enable stronger analysis hooks.",
                 "Use the 1.0.5 SDK release or the tools-source package to provide LSPServer."
             )
+    }
+}
+
+func encodeLspFrame(body: String): String {
+    return "Content-Length: ${body.toArray().size}\r\n\r\n${body}"
+}
+
+func extractLspBodies(raw: String): Array<String> {
+    let bodies = ArrayList<String>()
+    var offset: Int64 = 0
+    while (offset < raw.size) {
+        let headerEnd = match (raw.indexOf("\r\n\r\n", offset)) {
+            case Some(value) => value
+            case None => break
+        }
+        let headers = raw[offset..headerEnd]
+        let lengthKey = "Content-Length:"
+        let lengthStart = match (headers.indexOf(lengthKey)) {
+            case Some(value) => value + lengthKey.size
+            case None => break
+        }
+        let lengthLineEnd = match (headers.indexOf("\r\n", lengthStart)) {
+            case Some(value) => value
+            case None => headers.size
+        }
+        let length = Int64.parse(headers[lengthStart..lengthLineEnd].trimAscii())
+        let bodyStart = headerEnd + 4
+        let bodyEnd = bodyStart + length
+        if (bodyEnd > raw.size) {
+            break
+        }
+        bodies.add(raw[bodyStart..bodyEnd])
+        offset = bodyEnd
+    }
+    return bodies.toArray()
+}
+
+func probeLspServer(repoRoot: String): LspProbeResult {
+    match (resolveLspCommand(repoRoot)) {
+        case None =>
+            return LspProbeResult(false, false, "", "No Cangjie LSP binary was detected for probing.", "")
+        case Some(command) =>
+            try {
+                let process = launch(command,
+                    [],
+                    workingDirectory: Path(repoRoot),
+                    stdIn: ProcessRedirect.Pipe,
+                    stdOut: ProcessRedirect.Pipe,
+                    stdErr: ProcessRedirect.Pipe)
+                let initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"clientInfo\":{\"name\":\"CangjieCoder\",\"version\":\"0.1.0\"},\"rootUri\":null,\"capabilities\":{}}}"
+                let initialized = "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"
+                let shutdown = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"shutdown\",\"params\":null}"
+                let exitRequest = "{\"jsonrpc\":\"2.0\",\"method\":\"exit\",\"params\":null}"
+                let payload = "${encodeLspFrame(initialize)}${encodeLspFrame(initialized)}${encodeLspFrame(shutdown)}${encodeLspFrame(exitRequest)}"
+                process.stdInPipe.write(payload.toArray())
+                process.stdInPipe.flush()
+                let (_, stdoutBytes, stderrBytes) = process.waitOutput()
+                let stdout = String.fromUtf8(stdoutBytes)
+                let stderr = String.fromUtf8(stderrBytes)
+                let bodies = extractLspBodies(stdout)
+                for (body in bodies) {
+                    if (body.contains("\"capabilities\"") || (body.contains("\"result\"") && !body.contains("\"error\""))) {
+                        return LspProbeResult(true, true, command, "LSP initialize probe succeeded.", shortPreview(body, maxLines: 12))
+                    }
+                }
+                if (!bodies.isEmpty()) {
+                    return LspProbeResult(true, false, command, "LSP probe returned JSON-RPC responses, but initialize did not succeed cleanly.", shortPreview(bodies[0], maxLines: 12))
+                }
+                return LspProbeResult(true, false, command, "LSP probe produced no parseable JSON-RPC response.", shortPreview(stderr, maxLines: 12))
+            } catch (e: Exception) {
+                return LspProbeResult(true, false, command, "LSP probe failed.", shortPreview(e.toString(), maxLines: 12))
+            }
     }
 }

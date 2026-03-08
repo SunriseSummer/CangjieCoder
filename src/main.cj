@@ -12,6 +12,7 @@ func printUsage(): Unit {
     println("  cangjiecoder providers")
     println("  cangjiecoder analyze <path> [--repo PATH]")
     println("  cangjiecoder lsp-status [--repo PATH]")
+    println("  cangjiecoder lsp-probe [--repo PATH]")
     println("")
     println("Environment:")
     println("  STDX_PATH            stdx binary dependency directory")
@@ -85,6 +86,16 @@ main(args: Array<String>): Int64 {
             }
             println(status.sourceHint)
             return if (status.available) { 0 } else { 1 }
+        case "lsp-probe" =>
+            let result = probeLspServer(config.repoRoot)
+            println(result.summary)
+            if (!result.command.isEmpty()) {
+                println("command: ${result.command}")
+            }
+            if (!result.responsePreview.trimAscii().isEmpty()) {
+                println(result.responsePreview)
+            }
+            return if (result.success) { 0 } else { 1 }
         case "help" =>
             printUsage()
             return 0
