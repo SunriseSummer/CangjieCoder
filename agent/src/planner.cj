@@ -27,8 +27,8 @@ func extractJsonObjectText(text: String): String {
         case Some(value) => value
         case None => return ""
     }
-    // Use the first opening brace and the last reachable closing brace as a
-    // tolerant fallback because provider replies may include prose around the JSON.
+    // provider 可能会在 JSON 外层包一段解释文字，
+    // 这里退而求其次地截取“首个左花括号到最后一个可达右花括号”。
     var end: Int64 = text.size - 1
     while (end >= start) {
         if (text[end..end + 1] == "}") {
@@ -40,6 +40,8 @@ func extractJsonObjectText(text: String): String {
 }
 
 func extractTargetPathFromPrompt(prompt: String): String {
+    // 新建项目提示词常常直接把目标目录写进自然语言中，
+    // 这里按常见中英文分隔符裁剪出 target/... 路径。
     let marker = "target/"
     let start = match (prompt.indexOf(marker)) {
         case Some(value) => value
@@ -60,6 +62,8 @@ func extractTargetPathFromPrompt(prompt: String): String {
 }
 
 func allowedToolNames(toolsJson: String): Array<String> {
+    // 从 tools/list 结果中提取白名单，后续所有模型计划与本地回退步骤
+    // 都必须经过这里约束，防止调用不存在或未暴露的工具。
     let root = parseJsonObject(toolsJson)
     match (root.get("tools")) {
         case Some(toolsValue) =>
@@ -94,6 +98,8 @@ func containsTool(allowedTools: Array<String>, tool: String): Bool {
 }
 
 func extractWorkspaceFiles(snapshot: String): Array<String> {
+    // list_files 的结构化数据里只关心 files 字段，
+    // 单独抽出来能让后续启发式逻辑更简单。
     let snapshotRoot = parseJsonObject(snapshot)
     let data = extractStructuredData(snapshotRoot)
     match (data.get("files")) {
@@ -116,8 +122,8 @@ func normalizePlanSteps(steps: Array<PlannedToolCall>, allowedTools: Array<Strin
         if (seenKeys.contains(stepKey)) {
             continue
         }
-        // Deduplicate by tool + serialized arguments so repeated replan output
-        // does not waste a limited execution budget.
+        // 以“工具 + 参数”去重，避免模型在 replanning 时重复输出同一步，
+        // 浪费有限的执行轮次与预算。
         seenKeys.add(stepKey)
         results.add(PlannedToolCall(tool, step.arguments, step.reason))
         if (results.size >= MAX_PLAN_STEPS) {
@@ -134,6 +140,8 @@ func readFileStep(path: String, reason: String): PlannedToolCall {
 }
 
 func extractPromptFilePath(prompt: String, workspaceFiles: Array<String>): String {
+    // 优先选择提示词中明确提到的 .cj 文件；
+    // 如果没点名，再退化到工作区里的第一个 Cangjie 源文件。
     for (file in workspaceFiles) {
         if (file.endsWith(".cj") && prompt.contains(file)) {
             return file
@@ -179,12 +187,14 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
         normalized.contains("json parser")) {
         let arguments = JsonObject()
         arguments.put("path", JsonString(extractTargetPathFromPrompt(prompt)))
-        // New-project prompts benefit from a deterministic fast path because the
-        // bundled JsonParser example is the only curated bootstrap target today.
+        // 当前仓库内唯一稳定维护的模板是 JsonParser 示例，
+        // 因此“新项目”类请求优先走确定性的 bootstrap 快路径。
         steps.add(PlannedToolCall("project.bootstrap_json_parser", arguments, "Bootstrap the starter project for a new-project style request."))
         return AgentPlan("Bootstrap a starter project and validate it locally.", steps.toArray())
     }
 
+    // 常规请求默认先看目录、README、cjpm.toml，
+    // 把“先理解工作区再行动”固化为本地回退策略。
     steps.add(PlannedToolCall("workspace.list_files", JsonObject(), "Inspect the workspace layout before deeper actions."))
     if (workspaceFiles.contains("README.md")) {
         steps.add(readFileStep("README.md", "Read the workspace README to understand the project purpose and commands."))
@@ -197,6 +207,8 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     if (!candidateFile.isEmpty() && promptNeedsAnalysis(prompt)) {
         let arguments = JsonObject()
         arguments.put("path", JsonString(candidateFile))
+        // 选一个代表性源码文件做 analyze，通常比直接修改更稳，
+        // 也能给后续模型轮次补充更精确的上下文。
         steps.add(PlannedToolCall("cangjie.analyze_file", arguments, "Analyze a representative Cangjie source file related to the request."))
     }
 
@@ -219,8 +231,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
             match (root.get("steps")) {
                 case Some(stepsValue) =>
                     let steps = stepsValue.asArray()
-                    // An explicit empty array is treated as a valid "done" signal
-                    // rather than forcing the local fallback planner to run.
+                    // 模型显式返回空数组时，视为“无需继续执行”的合法信号，
+                    // 不再强行触发本地 fallback 计划。
                     if (steps.size() == 0) {
                         return AgentPlan(jsonField(root, "summary", fallback: "Model indicates no further work is required"), [])
                     }
@@ -251,8 +263,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
     }
     let fallback = buildFallbackPlan(context)
     let normalizedFallback = normalizePlanSteps(fallback.steps, allowedTools)
-    // Even the fallback path returns at least one safe introspection step so the
-    // runner never reaches execution with an entirely empty plan by accident.
+    // 即使模型输出完全不可用，也至少回退到一个安全的检查步骤，
+    // 避免 runner 因空计划进入不可预期状态。
     return AgentPlan(fallback.summary, if (normalizedFallback.isEmpty()) {
         [PlannedToolCall("workspace.list_files", JsonObject(), "Fallback to a safe workspace listing step.")]
     } else {
@@ -261,8 +273,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
 }
 
 func buildPlanPrompt(context: AgentPlanningContext): String {
-    // MAX_PLAN_STEPS (${MAX_PLAN_STEPS}) keeps model plans bounded while still
-    // allowing up to six steps for inspect + read-config + analyze + mutate + build + test workflows.
+    // 在提示词中显式注入上限，帮助模型把计划控制在可执行范围内，
+    // 同时保留完成一次标准开发闭环所需的步骤数量。
     return """
 You are the single-agent planner for CangjieCoder.
 

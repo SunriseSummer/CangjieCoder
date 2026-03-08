@@ -4,6 +4,7 @@ import std.collection.*
 import stdx.encoding.json.*
 
 func mergedPlanSummary(plans: Array<AgentPlan>): String {
+    // 多轮执行结束后，把每轮摘要串起来，便于最终总结同时保留 replanning 痕迹。
     let summaries = ArrayList<String>()
     for (plan in plans) {
         if (!plan.summary.trimAscii().isEmpty()) {
@@ -14,6 +15,8 @@ func mergedPlanSummary(plans: Array<AgentPlan>): String {
 }
 
 func stepSignature(tool: String, arguments: JsonObject): String {
+    // 使用“工具名 + 序列化参数”作为幂等签名，
+    // 用最小代价屏蔽模型在多轮中重复给出相同步骤。
     return "${tool.trimAscii()}|${arguments.toString()}"
 }
 
@@ -61,6 +64,8 @@ func hasVerificationExecution(executions: Array<ToolExecution>): Bool {
 }
 
 func roundWasInspectionOnly(executions: Array<ToolExecution>): Bool {
+    // 纯检查轮次意味着模型还停留在“观察阶段”，
+    // 若用户明确要求修改或验证，下一轮通常仍应继续推进。
     if (executions.isEmpty()) {
         return false
     }
@@ -78,8 +83,8 @@ func shouldTriggerFollowUpRound(prompt: String,
                                 allExecutions: Array<ToolExecution>,
                                 currentRound: Int64,
                                 maxRounds: Int64): Bool {
-    // Follow-up rounds are reserved for incomplete or unstable outcomes; a fully
-    // successful round exits early to keep the agent bounded and predictable.
+    // 追加轮次只留给“失败、未验证、只观察未落地”这几类不完整结果；
+    // 一旦当前结果已经稳定，就立即收敛，保证 agent 有界且可预测。
     if (currentRound + 1 >= maxRounds || roundExecutions.isEmpty()) {
         return false
     }
@@ -96,12 +101,15 @@ func shouldTriggerFollowUpRound(prompt: String,
 }
 
 func planningContext(client: ServiceClient, config: AgentConfig, toolsJson: String): AgentPlanningContext {
+    // 每轮都重新抓取工作区快照与 example 列表，
+    // 避免 bootstrap / 编辑之后继续拿旧状态做规划。
     let workspaceSnapshot = client.callTool("workspace.list_files", JsonObject()).toString()
     let exampleProjects = client.callTool("project.list_examples", JsonObject()).toString()
     return AgentPlanningContext(config.prompt, toolsJson, workspaceSnapshot, exampleProjects)
 }
 
 func printRoundPlan(round: Int64, plan: AgentPlan, steps: Array<PlannedToolCall>): Unit {
+    // 控制台计划输出保持简单直接，便于人工观察 agent 每轮决策。
     println("[plan round ${round}]")
     println(plan.summary)
     for (step in steps) {
@@ -120,8 +128,8 @@ func runAgent(config: AgentConfig): Int64 {
     var allOk = true
     var round: Int64 = 0
     while (round < config.maxRounds) {
-        // Refresh workspace state on every round so replanning sees mutations from
-        // previous tool calls instead of relying on stale snapshots.
+        // 每轮都刷新工作区状态，让 replanning 能看到前一轮真实修改结果，
+        // 而不是基于过期快照继续做错误决策。
         let context = planningContext(client, config, toolsJson)
         let planTurn = if (round == 0) {
             client.conversationTurn(buildPlanPrompt(context), sessionId: sessionId)
@@ -131,8 +139,8 @@ func runAgent(config: AgentConfig): Int64 {
         let plan = parsePlan(planTurn.reply, context)
         plans.add(plan)
 
-        // Validation steps are appended before duplicate filtering so automatic
-        // build/test checks still participate in the same deduplication rules.
+        // 先补自动验证步骤，再统一去重，这样补出来的 build/test
+        // 也会遵守与模型原始步骤完全一致的幂等规则。
         let steps = filterPendingSteps(appendValidationSteps(plan.steps, allowedTools: allowedTools), executions.toArray())
         printRoundPlan(round + 1, plan, steps)
         if (steps.isEmpty()) {
@@ -162,8 +170,8 @@ func runAgent(config: AgentConfig): Int64 {
 
     let finalPlan = AgentPlan(mergedPlanSummary(plans.toArray()), [])
     let remoteFinalTurn = client.conversationTurn(buildFinalPrompt(config.prompt, finalPlan, executions.toArray()), sessionId: sessionId)
-    // Final summarization degrades to a local transcript when the provider is
-    // unavailable so the agent still returns a useful deterministic result.
+    // provider 不可用时退化到本地摘要，避免“工具执行成功但最后一句话没生成”
+    // 这种体验断裂，保证用户始终能拿到确定性的最终结果。
     let finalReply = if (!remoteFinalTurn.success ||
         remoteFinalTurn.reply.startsWith("Provider request failed:") ||
         remoteFinalTurn.reply.startsWith("Missing API key:") ||
