@@ -7,8 +7,8 @@ import stdx.encoding.json.*
 
 const DEFAULT_PROVIDER: String = "kimi"
 const DEFAULT_MODEL: String = "kimi-k2.5"
-// Keep the plan short enough for predictable execution while allowing
-// inspect + read-config + analyze + mutate + build + test workflows in one pass.
+// MAX_PLAN_STEPS is intentionally 6 so a single bounded plan can fit up to six
+// steps and still accommodate inspect + read-config + analyze + mutate + build + test workflows.
 const MAX_PLAN_STEPS: Int64 = 6
 const MAX_TRANSCRIPT_LINES: Int64 = 12
 

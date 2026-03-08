@@ -73,7 +73,7 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
         throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
     }
     // Validate against the nearest existing ancestor so nested new paths such
-    // as target/generated/demo can be created safely without pre-creating every parent.
+    // as target/generated/demo can be created safely without precreating every parent.
     let canonicalParent = canonicalize(existingParent).toString()
     if (!canonicalParent.startsWith(canonicalRoot)) {
         throw IllegalArgumentException("Path escapes repository root: ${path}")
@@ -94,7 +94,7 @@ func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, dest
             }
             let outputParent = Path(outputPath).parent.toString()
             if (!outputParent.isEmpty() && !exists(outputParent)) {
-                Directory.create(outputParent, recursive: true)
+                Directory.create(ensurePlannedWorkspacePath(workspaceRoot, outputParent), recursive: true)
             }
             copy(project.templatePath, to: outputPath)
             removeIfExists("${outputPath}/target", recursive: true)
