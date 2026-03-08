@@ -83,6 +83,25 @@ func ensureWorkspacePath(repoRoot: String, path: String): String {
     return canonicalPath
 }
 
+// Convert an absolute or in-repo path into a workspace-relative path.
+// Returns "." when the path is the workspace root, and intentionally returns the original input unchanged for non-existent paths.
+func workspaceRelativePath(repoRoot: String, path: String): String {
+    let canonicalRoot = canonicalize(repoRoot).toString()
+    let canonicalPath = if (exists(path)) {
+        canonicalize(path).toString()
+    } else {
+        path
+    }
+    if (canonicalPath == canonicalRoot) {
+        return "."
+    }
+    let prefix = "${canonicalRoot}/"
+    if (canonicalPath.startsWith(prefix)) {
+        return canonicalPath[prefix.size..canonicalPath.size]
+    }
+    return canonicalPath
+}
+
 func readTextFile(path: String): String {
     return String.fromUtf8(File.readFrom(path))
 }
@@ -124,15 +143,20 @@ func replaceExactText(repoRoot: String, path: String, oldText: String, newText: 
     return "updated ${fullPath}"
 }
 
-func runCommandWithCapturedOutput(command: String, arguments: Array<String>, workingDirectory: String): (Bool, String, String) {
+func runCommandDetailedOutput(command: String, arguments: Array<String>, workingDirectory: String): (Int64, String, String) {
     try {
         let (status, stdoutBytes, stderrBytes) = executeWithOutput(command,
             arguments,
             workingDirectory: Path(workingDirectory),
             stdOut: Pipe,
             stdErr: Pipe)
-        return (status == 0, String.fromUtf8(stdoutBytes), String.fromUtf8(stderrBytes))
+        return (status, String.fromUtf8(stdoutBytes), String.fromUtf8(stderrBytes))
     } catch (e: Exception) {
-        return (false, "", e.toString())
+        return (-1, "", e.toString())
     }
+}
+
+func runCommandWithCapturedOutput(command: String, arguments: Array<String>, workingDirectory: String): (Bool, String, String) {
+    let (status, stdout, stderr) = runCommandDetailedOutput(command, arguments, workingDirectory)
+    return (status == 0, stdout, stderr)
 }

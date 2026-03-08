@@ -196,13 +196,13 @@ curl -X POST http://127.0.0.1:8080/mcp \
 
 ## 4.1 先给结论
 
-**从能力和协议方向看：可以朝“接入外部 AI 宿主”演进；但就当前仓库形态而言，还没有做到对这些产品的开箱即用集成。**
+**从能力和协议方向看：现在已经可以通过 stdio MCP 方式接入支持外部 MCP Server 的宿主；但还没有做到对 OpenCode / Cursor / VSCode Copilot 等产品的“官方开箱即用适配”。**
 
 更准确地说：
 
 - **如果某个宿主支持自定义 MCP Server 或自定义 HTTP Tool Bridge，CangjieCoder 有机会接进去；**
 - **但当前仓库还没有提供针对 OpenCode / Cursor / VSCode Copilot 的现成适配层、配置模板或安装说明；**
-- **并且当前 MCP 入口是 HTTP `/mcp` 服务形态，不是常见的 stdio 本地进程式 MCP Server 交付方式。**
+- **现在已经同时提供 HTTP `/mcp` 与 `mcp-stdio` 两种 MCP 入口，其中 `mcp-stdio` 更适合主流 MCP 客户端托管本地子进程。**
 
 所以现在的状态不是“不能接”，而是：
 
@@ -254,12 +254,9 @@ curl -X POST http://127.0.0.1:8080/mcp \
 
 至少补这几类能力：
 
-1. **stdio 模式 MCP Server**
-   - 目前是 HTTP `/mcp`
-   - 许多 MCP 客户端更偏好本地进程 stdio 通信
-   - 建议新增：
-     - `serve-mcp-stdio`
-     - 或独立 `mcp_stdio.cj`
+1. **stdio 模式 MCP Server（已完成）**
+   - 现在同时支持 HTTP `/mcp` 与 `mcp-stdio`
+   - `mcp-stdio` 使用 `Content-Length` 帧读写 JSON-RPC，更适合 MCP 客户端直接托管
 
 2. **更完整的 MCP 能力面**
    - 现在主要是 tools
@@ -451,19 +448,23 @@ cjpm run --run-args "serve --repo /absolute/path/to/your-cangjie-project"
 
 目标：先成为可靠的仓颉能力服务，而不是一上来就做全自治。
 
-建议新增：
+当前这一层已经完成的能力包括：
 
 1. **stdio MCP 模式**
-2. **文件搜索 / 目录遍历 / glob / grep 类工具**
+2. **文件搜索 / 目录遍历 / grep 类工具**
+   - `workspace.list_files`
+   - `workspace.search_text`
 3. **安全的命令执行工具**
    - `workspace.run_build`
    - `workspace.run_test`
    - `workspace.run_command`（受限白名单）
 4. **结构化错误输出**
+   - 工具错误统一收敛到 `ok` / `summary` / `data`
+   - MCP `tools/call` 统一返回 `content` + `structuredContent` + `isError`
 5. **统一工具结果模型**
-6. **README + integrations 文档补齐**
+6. **README + 接入说明文档补齐**
 
-P0 完成后，CangjieCoder 就能比较自然地挂到自研 Agent 或支持外部 MCP 的宿主上。
+P0 完成后，CangjieCoder 已经可以比较自然地挂到自研 Agent 或支持外部 MCP 的宿主上；后续重点会转向更深的宿主适配、P1 半自治闭环，以及更完整的 MCP/LSP 能力。
 
 ---
 
@@ -526,18 +527,16 @@ P1 完成后，基本就能做到：
 
 下面给一个比较务实的排期建议。
 
-## V0.2（当前基础上继续增强）
+## V0.2（P0 已落地后的继续增强）
 
 目标：把底座补稳。
 
 建议范围：
 
-- stdio MCP 模式
-- 文件搜索/遍历工具
-- 构建/测试命令工具
-- 更完整的 MCP 文档
-- serve 模式接入说明
-- 错误模型标准化
+- 宿主适配示例配置
+- prompts/resources/streaming 等更完整 MCP 能力
+- 更细的命令白名单与权限治理
+- 持续补强端到端测试与集成测试
 
 ## V0.3
 

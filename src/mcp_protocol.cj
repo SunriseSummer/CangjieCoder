@@ -23,10 +23,30 @@ func buildToolDefinitions(): Array<ToolDefinition> {
         ToolDefinition("workspace.read_file", "Read a file inside the repository root.", [
             ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true)
         ]),
+        ToolDefinition("workspace.list_files", "Recursively list files inside the repository root or a subdirectory.", [
+            ToolArgSpec("path", "string", "Optional repository-relative directory to list from. Defaults to the workspace root.", false),
+            ToolArgSpec("limit", "integer", "Maximum number of files to return. Defaults to 200.", false)
+        ]),
+        ToolDefinition("workspace.search_text", "Search for exact text matches inside workspace files.", [
+            ToolArgSpec("query", "string", "Exact text query to search for.", true),
+            ToolArgSpec("path", "string", "Optional repository-relative directory to search in. Defaults to the workspace root.", false),
+            ToolArgSpec("limit", "integer", "Maximum number of matches to return. Defaults to 20.", false)
+        ]),
         ToolDefinition("workspace.replace_text", "Replace exactly one matched text block inside an existing file.", [
             ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
             ToolArgSpec("oldText", "string", "Exact text to replace.", true),
             ToolArgSpec("newText", "string", "Replacement text.", true)
+        ]),
+        ToolDefinition("workspace.run_build", "Run cjpm build inside the workspace or a subdirectory.", [
+            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
+        ]),
+        ToolDefinition("workspace.run_test", "Run cjpm test inside the workspace or a subdirectory.", [
+            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
+        ]),
+        ToolDefinition("workspace.run_command", "Run a workspace command from a restricted allowlist for agent automation.", [
+            ToolArgSpec("command", "string", "Allowed command name such as cjpm, cjc, cjlint, tree-sitter, grep, or find.", true),
+            ToolArgSpec("args", "array", "Optional positional arguments for the allowed command.", false),
+            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
         ]),
         ToolDefinition("cangjie.analyze_file", "Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file.", [
             ToolArgSpec("path", "string", "Cangjie source file path.", true)

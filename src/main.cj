@@ -5,6 +5,7 @@ func printUsage(): Unit {
     println("")
     println("Usage:")
     println("  cangjiecoder serve [--repo PATH] [--host HOST] [--port PORT]")
+    println("  cangjiecoder mcp-stdio [--repo PATH]")
     println("  cangjiecoder skills [--repo PATH]")
     println("  cangjiecoder skills-search <query> [--repo PATH]")
     println("  cangjiecoder examples [--repo PATH]")
@@ -35,6 +36,9 @@ main(args: Array<String>): Int64 {
     match (args[0]) {
         case "serve" =>
             startServer(config)
+            return 0
+        case "mcp-stdio" =>
+            startMcpStdioServer(config)
             return 0
         case "skills" =>
             let registry = SkillRegistry(config.repoRoot)

@@ -40,10 +40,17 @@
   - `/ast/edit`
   - `/chat`
   - `/mcp`
+- 提供可直接接入外部 Agent/IDE 工具的 stdio MCP 入口：
+  - `mcp-stdio`
 - MCP 工具：
   - `skills.search`
   - `workspace.read_file`
+  - `workspace.list_files`
+  - `workspace.search_text`
   - `workspace.replace_text`
+  - `workspace.run_build`
+  - `workspace.run_test`
+  - `workspace.run_command`
   - `cangjie.analyze_file`
   - `project.list_examples`
   - `project.bootstrap_json_parser`
@@ -138,6 +145,7 @@ cjpm run --run-args "analyze src/main.cj"
 cjpm run --run-args "lsp-status"
 cjpm run --run-args "lsp-probe"
 cjpm run --run-args "serve --repo /absolute/path/to/repo --host 127.0.0.1 --port 8080"
+cjpm run --run-args "mcp-stdio --repo /absolute/path/to/repo"
 ```
 
 ### HTTP API
@@ -273,6 +281,25 @@ curl -X POST http://127.0.0.1:8080/mcp \
 ```
 
 MCP `tools/list` 现在会返回每个工具的 `inputSchema`，便于客户端自动发现参数结构。
+`tools/call` 现在会返回更接近 MCP 客户端预期的结果结构：`content` 文本块 + `structuredContent` + `isError`，更方便被外部 Agent 稳定消费。
+
+#### stdio MCP（用于接入外部 Agent/IDE 工具）
+
+如果宿主支持以 stdio 方式启动 MCP Server，可以直接把 CangjieCoder 配置为：
+
+```bash
+cjpm run --run-args "mcp-stdio --repo /absolute/path/to/repo"
+```
+
+该模式只通过 `Content-Length` 帧在标准输入/输出上交换 JSON-RPC 消息，不额外向标准输出写日志，更适合作为 MCP 客户端托管的本地子进程。
+
+当前 P0 级新增工作区工具包括：
+
+- `workspace.list_files`
+- `workspace.search_text`
+- `workspace.run_build`
+- `workspace.run_test`
+- `workspace.run_command`
 
 还可以通过 MCP 使用多轮会话与 AST 编辑能力：
 
