@@ -21,8 +21,8 @@ func listExampleProjects(repoRoot: String): Array<ExampleProjectSpec> {
     return [
         ExampleProjectSpec(
             "json_parser",
-            "JsonParser 示例项目",
-            "一个可直接构建测试的仓颉 JsonParser 示例工程，演示自主生成/扩展仓颉项目的第一步。",
+            "JsonParser example project",
+            "Buildable and testable Cangjie JsonParser example project for the first autonomous project workflow.",
             "${repoRoot}/examples/json_parser"
         )
     ]
@@ -71,16 +71,16 @@ func bootstrapJsonParserProject(repoRoot: String, destination: String): String {
 }
 
 func resolveLspCommand(repoRoot: String): ?String {
-    let explicitCommand = (getVariable("CANGJIE_LSP_COMMAND") ?? "").trimAscii()
-    if (!explicitCommand.isEmpty()) {
-        return explicitCommand
+    let configuredLspCommand = (getVariable("CANGJIE_LSP_COMMAND") ?? "").trimAscii()
+    if (!configuredLspCommand.isEmpty()) {
+        return configuredLspCommand
     }
 
     let sdkHome = (getVariable("CANGJIE_SDK_HOME") ?? "").trimAscii()
     if (!sdkHome.isEmpty()) {
-        let bundledCommand = "${sdkHome}/tools/bin/LSPServer"
-        if (exists(bundledCommand)) {
-            return bundledCommand
+        let bundledLspPath = "${sdkHome}/tools/bin/LSPServer"
+        if (exists(bundledLspPath)) {
+            return bundledLspPath
         }
     }
 

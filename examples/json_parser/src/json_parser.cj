@@ -125,7 +125,7 @@ class JsonParser {
                 if (isDigit(current)) {
                     return parseNumber()
                 }
-                fail("Unexpected token while parsing value")
+                fail("Unexpected token '${displayByte(current)}' while parsing value")
         }
     }
 
@@ -138,7 +138,7 @@ class JsonParser {
             return JsonObjectNode(entries)
         }
 
-        while (true) {
+        while (index < bytes.size) {
             skipWhitespace()
             let key = parseString()
             skipWhitespace()
@@ -165,7 +165,7 @@ class JsonParser {
             return JsonArrayNode(items)
         }
 
-        while (true) {
+        while (index < bytes.size) {
             items.add(parseValue())
             skipWhitespace()
             let next = currentByte()
@@ -232,10 +232,10 @@ class JsonParser {
         if (currentByte() == b'-') {
             advance()
         }
-        consumeDigits()
+        consumeDigits(required: true)
         if (index < bytes.size && currentByte() == b'.') {
             advance()
-            consumeDigits()
+            consumeDigits(required: true)
         }
         if (index < bytes.size) {
             let current = currentByte()
@@ -247,7 +247,7 @@ class JsonParser {
                         advance()
                     }
                 }
-                consumeDigits()
+                consumeDigits(required: true)
             }
         }
         let numberBytes = Array<Byte>(index - start, { idx => bytes[start + idx] })
@@ -255,8 +255,17 @@ class JsonParser {
         return JsonNumberNode(Float64.parse(numberText))
     }
 
-    func consumeDigits(): Unit {
+    func consumeDigits(required!: Bool = true): Unit {
+        if (index >= bytes.size) {
+            if (required) {
+                fail("Expected digit but reached end of input")
+            }
+            return
+        }
         if (!isDigit(currentByte())) {
+            if (!required) {
+                return
+            }
             fail("Expected digit")
         }
         while (index < bytes.size && isDigit(currentByte())) {
@@ -271,8 +280,9 @@ class JsonParser {
     }
 
     func expect(expected: Byte): Unit {
-        if (currentByte() != expected) {
-            fail("Unexpected token")
+        let found = currentByte()
+        if (found != expected) {
+            fail("Expected '${displayByte(expected)}' but found '${displayByte(found)}'")
         }
         advance()
     }
@@ -325,4 +335,23 @@ func escapeJsonString(text: String): String {
         }
     }
     return String.join(buffer.toArray())
+}
+
+func displayByte(value: Byte): String {
+    if (value == b'\n') {
+        return "\\n"
+    }
+    if (value == b'\r') {
+        return "\\r"
+    }
+    if (value == b'\t') {
+        return "\\t"
+    }
+    if (value == b'\"') {
+        return "\\\""
+    }
+    if (value == b'\\') {
+        return "\\\\"
+    }
+    return String.fromUtf8([value])
 }
