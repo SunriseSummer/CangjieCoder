@@ -6,8 +6,8 @@ import std.fs.*
 class SkillRegistry {
     let skills = ArrayList<SkillRecord>()
 
-    public init(repoRoot: String) {
-        let skillsRoot = "${repoRoot}/.github/skills"
+    public init(serviceRoot: String) {
+        let skillsRoot = resolveBundledPath(serviceRoot, ".github/skills")
         if (exists(skillsRoot)) {
             loadSkillDirectory(skillsRoot)
         }

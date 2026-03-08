@@ -5,6 +5,7 @@ import std.env.*
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
+import stdx.net.tls.*
 
 func builtinProviders(): Array<ProviderSpec> {
     return [
@@ -13,7 +14,7 @@ func builtinProviders(): Array<ProviderSpec> {
             "Moonshot Kimi",
             "https://api.moonshot.cn/v1/chat/completions",
             "KIMI_API_KEY",
-            "kimi-k2-0711-preview"
+            "kimi-k2.5"
         ),
         ProviderSpec(
             "glm",
@@ -100,7 +101,13 @@ func chatWithProvider(providerName: String,
 
             requestObject.put("messages", messages)
 
-            let client = ClientBuilder().build()
+            let clientBuilder = if (provider.baseUrl.startsWith("https://")) {
+                let tlsConfig = TlsClientConfig()
+                ClientBuilder().tlsConfig(tlsConfig)
+            } else {
+                ClientBuilder()
+            }
+            let client = clientBuilder.build()
             try {
                 let request = HttpRequestBuilder()
                     .post()

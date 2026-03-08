@@ -6,10 +6,13 @@ import std.fs.*
 import std.process.*
 import std.env.*
 
-const APP_VERSION: String = "0.2.0"
+const APP_VERSION: String = "0.3.0"
 
 struct AppConfig {
-    public AppConfig(let repoRoot: String, let host: String, let port: UInt16) {}
+    public AppConfig(let workspaceRoot: String,
+                     let serviceRoot: String,
+                     let host: String,
+                     let port: UInt16) {}
 }
 
 struct SkillRecord {
@@ -36,7 +39,8 @@ struct AnalysisResult {
 }
 
 func parseConfig(args: Array<String>): AppConfig {
-    var repoRoot = getWorkingDirectory().toString()
+    let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
+    var workspaceRoot = serviceRoot
     var host = "127.0.0.1"
     var port: UInt16 = 8080
     var index = 0
@@ -44,7 +48,7 @@ func parseConfig(args: Array<String>): AppConfig {
         let current = args[index]
         if (current == "--repo") {
             if (index + 1 < args.size) {
-                repoRoot = args[index + 1]
+                workspaceRoot = args[index + 1]
                 index += 1
             }
         } else if (current == "--host") {
@@ -60,7 +64,20 @@ func parseConfig(args: Array<String>): AppConfig {
         }
         index += 1
     }
-    return AppConfig(canonicalize(repoRoot).toString(), host, port)
+    return AppConfig(canonicalize(workspaceRoot).toString(), serviceRoot, host, port)
+}
+
+func resolveBundledPath(serviceRoot: String, relativePath: String): String {
+    let bundledPath = "${serviceRoot}/${relativePath}"
+    if (exists(bundledPath)) {
+        return canonicalize(bundledPath).toString()
+    }
+
+    let parentBundledPath = "${serviceRoot}/../${relativePath}"
+    if (exists(parentBundledPath)) {
+        return canonicalize(parentBundledPath).toString()
+    }
+    return bundledPath
 }
 
 func resolveRepoPath(repoRoot: String, path: String): String {

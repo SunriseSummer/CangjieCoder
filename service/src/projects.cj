@@ -33,20 +33,21 @@ struct LspProbeResult {
                           let responsePreview: String) {}
 }
 
-func listExampleProjects(repoRoot: String): Array<ExampleProjectSpec> {
+func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
+    let examplesRoot = resolveBundledPath(serviceRoot, "examples")
     return [
         ExampleProjectSpec(
             "json_parser",
             "JsonParser example project",
             "Buildable and testable Cangjie JsonParser example project for the first autonomous project workflow.",
-            "${repoRoot}/examples/json_parser"
+            "${examplesRoot}/json_parser"
         )
     ]
 }
 
-func findExampleProject(repoRoot: String, projectId: String): ?ExampleProjectSpec {
+func findExampleProject(serviceRoot: String, projectId: String): ?ExampleProjectSpec {
     let normalizedId = projectId.toAsciiLower().trimAscii()
-    for (project in listExampleProjects(repoRoot)) {
+    for (project in listExampleProjects(serviceRoot)) {
         if (project.id == normalizedId) {
             return project
         }
@@ -69,14 +70,17 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     return "${canonicalParent}/${plannedPath.fileName}"
 }
 
-func bootstrapJsonParserProject(repoRoot: String, destination: String): String {
-    let outputPath = ensurePlannedWorkspacePath(repoRoot, destination)
+func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
+    let outputPath = ensurePlannedWorkspacePath(workspaceRoot, destination)
     if (exists(outputPath)) {
         return "Destination already exists: ${outputPath}"
     }
 
-    match (findExampleProject(repoRoot, "json_parser")) {
+    match (findExampleProject(serviceRoot, "json_parser")) {
         case Some(project) =>
+            if (!exists(project.templatePath)) {
+                return "JsonParser example template is missing: ${project.templatePath}"
+            }
             copy(project.templatePath, to: outputPath)
             removeIfExists("${outputPath}/target", recursive: true)
             removeIfExists("${outputPath}/cjpm.lock")

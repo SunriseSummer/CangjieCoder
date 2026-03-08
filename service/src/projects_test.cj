@@ -18,7 +18,7 @@ class ProjectBootstrapTest {
         let targetRoot = "${repoRoot}/target/bootstrap-json-parser-test"
         removeIfExists(targetRoot, recursive: true)
 
-        let message = bootstrapJsonParserProject(repoRoot, "target/bootstrap-json-parser-test")
+        let message = bootstrapJsonParserProject(repoRoot, repoRoot, "target/bootstrap-json-parser-test")
         @Expect(message.contains("Bootstrapped JsonParser example"))
         @Expect(exists("${targetRoot}/cjpm.toml"))
         @Expect(exists("${targetRoot}/src/json_parser.cj"))
