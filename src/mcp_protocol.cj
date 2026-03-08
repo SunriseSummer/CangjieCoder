@@ -52,7 +52,7 @@ func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("path", "string", "Cangjie source file path.", true),
             ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),
             ToolArgSpec("replacement", "string", "Replacement source text.", true),
-            ToolArgSpec("index", "number", "Zero-based match index when multiple nodes match.", false)
+            ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
         ])
     ]
 }

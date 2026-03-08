@@ -296,7 +296,7 @@ curl -X POST http://127.0.0.1:8080/mcp \
       "arguments":{
         "path":"src/main.cj",
         "nodeType":"function_definition",
-        "index":"0",
+        "index":0,
         "replacement":"func demo(): Unit { println(\"hello\") }"
       }
     }

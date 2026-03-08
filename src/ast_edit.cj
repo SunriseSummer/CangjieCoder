@@ -20,12 +20,16 @@ func sliceText(text: String, start: Int64, endExclusive: Int64): String {
 }
 
 func parseNodeCoordinate(line: String, fromIndex: Int64): ((Int64, Int64), Int64) {
-    let open = line.indexOf("[", fromIndex).getOrThrow()
-    let comma = line.indexOf(",", open).getOrThrow()
-    let close = line.indexOf("]", comma).getOrThrow()
-    let row = Int64.parse(sliceText(line, open + 1, comma).trimAscii())
-    let column = Int64.parse(sliceText(line, comma + 1, close).trimAscii())
-    return ((row, column), close + 1)
+    try {
+        let open = line.indexOf("[", fromIndex).getOrThrow()
+        let comma = line.indexOf(",", open).getOrThrow()
+        let close = line.indexOf("]", comma).getOrThrow()
+        let row = Int64.parse(sliceText(line, open + 1, comma).trimAscii())
+        let column = Int64.parse(sliceText(line, comma + 1, close).trimAscii())
+        return ((row, column), close + 1)
+    } catch (e: Exception) {
+        throw IllegalArgumentException("Failed to parse node coordinate from tree-sitter output: ${line}")
+    }
 }
 
 func parseTreeSitterNodeMatches(output: String, nodeType: String): Array<AstNodeMatch> {
@@ -46,26 +50,38 @@ func parseTreeSitterNodeMatches(output: String, nodeType: String): Array<AstNode
     return matches.toArray()
 }
 
+// Convert 0-based line:column coordinates into byte offsets and treat both LF and CRLF as line breaks.
 func offsetForPoint(text: String, line: Int64, column: Int64): Int64 {
     var currentLine: Int64 = 0
     var currentColumn: Int64 = 0
     var offset: Int64 = 0
-    for (byte in text.toArray()) {
+    let bytes = text.toArray()
+    var index: Int64 = 0
+    while (index < bytes.size) {
         if (currentLine == line && currentColumn == column) {
             return offset
         }
-        offset += 1
+        let byte = bytes[index]
+        if (byte == b'\r' && index + 1 < bytes.size && bytes[index + 1] == b'\n') {
+            currentLine += 1
+            currentColumn = 0
+            index += 2
+            offset += 2
+            continue
+        }
         if (byte == b'\n') {
             currentLine += 1
             currentColumn = 0
         } else {
             currentColumn += 1
         }
+        index += 1
+        offset += 1
     }
     if (currentLine == line && currentColumn == column) {
         return offset
     }
-    throw IllegalArgumentException("Point ${line}:${column} is outside the file")
+    throw IllegalArgumentException("Line:column coordinate ${line}:${column} exceeds file bounds (max reachable point: ${currentLine}:${currentColumn})")
 }
 
 func editAstNode(repoRoot: String,

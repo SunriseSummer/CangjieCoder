@@ -6,6 +6,10 @@ import std.env.*
 import std.fs.*
 import std.io.*
 import std.process.*
+import stdx.encoding.json.*
+
+const LSP_HEADER_DELIMITER: String = "\r\n\r\n"
+const LSP_CONTENT_LENGTH_HEADER: String = "Content-Length:"
 
 struct ExampleProjectSpec {
     public ExampleProjectSpec(let id: String,
@@ -126,21 +130,38 @@ func inspectLspStatus(repoRoot: String): LspStatus {
 }
 
 func encodeLspFrame(body: String): String {
-    return "Content-Length: ${body.toArray().size}\r\n\r\n${body}"
+    // LSP Content-Length is defined in bytes, so UTF-8 byte count is required here.
+    return "${LSP_CONTENT_LENGTH_HEADER} ${body.toArray().size}${LSP_HEADER_DELIMITER}${body}"
+}
+
+func buildLspRequest(id: Int64, method: String, params: JsonValue): String {
+    let root = JsonObject()
+    root.put("jsonrpc", JsonString("2.0"))
+    root.put("id", JsonInt(id))
+    root.put("method", JsonString(method))
+    root.put("params", params)
+    return root.toString()
+}
+
+func buildLspNotification(method: String, params: JsonValue): String {
+    let root = JsonObject()
+    root.put("jsonrpc", JsonString("2.0"))
+    root.put("method", JsonString(method))
+    root.put("params", params)
+    return root.toString()
 }
 
 func extractLspBodies(raw: String): Array<String> {
     let bodies = ArrayList<String>()
     var offset: Int64 = 0
     while (offset < raw.size) {
-        let headerEnd = match (raw.indexOf("\r\n\r\n", offset)) {
+        let headerEnd = match (raw.indexOf(LSP_HEADER_DELIMITER, offset)) {
             case Some(value) => value
             case None => break
         }
         let headers = raw[offset..headerEnd]
-        let lengthKey = "Content-Length:"
-        let lengthStart = match (headers.indexOf(lengthKey)) {
-            case Some(value) => value + lengthKey.size
+        let lengthStart = match (headers.indexOf(LSP_CONTENT_LENGTH_HEADER)) {
+            case Some(value) => value + LSP_CONTENT_LENGTH_HEADER.size
             case None => break
         }
         let lengthLineEnd = match (headers.indexOf("\r\n", lengthStart)) {
@@ -148,7 +169,7 @@ func extractLspBodies(raw: String): Array<String> {
             case None => headers.size
         }
         let length = Int64.parse(headers[lengthStart..lengthLineEnd].trimAscii())
-        let bodyStart = headerEnd + 4
+        let bodyStart = headerEnd + LSP_HEADER_DELIMITER.size
         let bodyEnd = bodyStart + length
         if (bodyEnd > raw.size) {
             break
@@ -171,10 +192,18 @@ func probeLspServer(repoRoot: String): LspProbeResult {
                     stdIn: ProcessRedirect.Pipe,
                     stdOut: ProcessRedirect.Pipe,
                     stdErr: ProcessRedirect.Pipe)
-                let initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"processId\":null,\"clientInfo\":{\"name\":\"CangjieCoder\",\"version\":\"0.1.0\"},\"rootUri\":null,\"capabilities\":{}}}"
-                let initialized = "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}"
-                let shutdown = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"shutdown\",\"params\":null}"
-                let exitRequest = "{\"jsonrpc\":\"2.0\",\"method\":\"exit\",\"params\":null}"
+                let initializeParams = JsonObject()
+                initializeParams.put("processId", JsonNull())
+                let clientInfo = JsonObject()
+                clientInfo.put("name", JsonString("CangjieCoder"))
+                clientInfo.put("version", JsonString(APP_VERSION))
+                initializeParams.put("clientInfo", clientInfo)
+                initializeParams.put("rootUri", JsonNull())
+                initializeParams.put("capabilities", JsonObject())
+                let initialize = buildLspRequest(1, "initialize", initializeParams)
+                let initialized = buildLspNotification("initialized", JsonObject())
+                let shutdown = buildLspRequest(2, "shutdown", JsonNull())
+                let exitRequest = buildLspNotification("exit", JsonNull())
                 let payload = "${encodeLspFrame(initialize)}${encodeLspFrame(initialized)}${encodeLspFrame(shutdown)}${encodeLspFrame(exitRequest)}"
                 process.stdInPipe.write(payload.toArray())
                 process.stdInPipe.flush()

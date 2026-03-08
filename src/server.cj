@@ -26,6 +26,23 @@ func parseJsonObject(body: String): JsonObject {
     return JsonValue.fromStr(body).asObject()
 }
 
+func parseJsonIntField(obj: JsonObject, key: String, fallback!: Int64 = 0): Int64 {
+    let raw = jsonField(obj, key)
+    let trimmed = raw.trimAscii()
+    if (trimmed.isEmpty()) {
+        return fallback
+    }
+    try {
+        return Int64.parse(trimmed)
+    } catch (e: Exception) {
+        return fallback
+    }
+}
+
+func effectiveModelName(provider: String, model: String): String {
+    return if (model.trimAscii().isEmpty()) { provider } else { model }
+}
+
 func providersJson(): String {
     let array = JsonArray()
     for (provider in builtinProviders()) {
@@ -191,7 +208,7 @@ func chatWithMemoryJson(repoRoot: String,
     let root = JsonObject()
     root.put("sessionId", JsonString(session.sessionId))
     root.put("provider", JsonString(provider))
-    root.put("model", JsonString(if (model.trimAscii().isEmpty()) { provider } else { model }))
+    root.put("model", JsonString(effectiveModelName(provider, model)))
     root.put("systemPrompt", JsonString(systemPrompt))
     root.put("historyPrompt", JsonString(historyPrompt))
     root.put("reply", JsonString(reply))
@@ -257,7 +274,7 @@ func callMcpTool(repoRoot: String,
             let path = jsonField(args, "path")
             let nodeType = jsonField(args, "nodeType")
             let replacement = jsonField(args, "replacement")
-            let index = Int64.parse(jsonField(args, "index", fallback: "0"))
+            let index = parseJsonIntField(args, "index", fallback: 0)
             let root = JsonObject()
             root.put("message", JsonString(editAstNode(repoRoot, path, nodeType, replacement, index: index)))
             return root.toString()
@@ -293,7 +310,7 @@ func handleMcpRequest(repoRoot: String,
             result.put("capabilities", capabilities)
             let serverInfo = JsonObject()
             serverInfo.put("name", JsonString("CangjieCoder"))
-            serverInfo.put("version", JsonString("0.2.0"))
+            serverInfo.put("version", JsonString(APP_VERSION))
             result.put("serverInfo", serverInfo)
             return jsonRpcResult(idJson, result.toString())
         case "ping" =>
@@ -420,7 +437,7 @@ func startServer(config: AppConfig): Unit {
             jsonField(request, "path"),
             jsonField(request, "nodeType"),
             jsonField(request, "replacement"),
-            index: Int64.parse(jsonField(request, "index", fallback: "0")))))
+            index: parseJsonIntField(request, "index", fallback: 0))))
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(root.toString())

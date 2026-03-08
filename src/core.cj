@@ -6,6 +6,8 @@ import std.fs.*
 import std.process.*
 import std.env.*
 
+const APP_VERSION: String = "0.2.0"
+
 struct AppConfig {
     public AppConfig(let repoRoot: String, let host: String, let port: UInt16) {}
 }

@@ -3,6 +3,9 @@ package cangjiecoder
 import std.collection.*
 import stdx.encoding.json.*
 
+// Keep only a short rolling window so multi-turn memory stays useful without unbounded growth.
+const CONVERSATION_TURN_LIMIT: Int64 = 12
+
 struct ConversationTurn {
     public ConversationTurn(let role: String, let content: String) {}
 }
@@ -20,7 +23,7 @@ class ConversationSession {
             return
         }
         turns.add(ConversationTurn(role, content))
-        while (turns.size > 12) {
+        while (turns.size > CONVERSATION_TURN_LIMIT) {
             turns.remove(at: 0)
         }
     }
