@@ -72,6 +72,8 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     if (existingParent.isEmpty()) {
         throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
     }
+    // Validate against the nearest existing ancestor so nested new paths such
+    // as target/generated/demo can be created safely without pre-creating every parent.
     let canonicalParent = canonicalize(existingParent).toString()
     if (!canonicalParent.startsWith(canonicalRoot)) {
         throw IllegalArgumentException("Path escapes repository root: ${path}")

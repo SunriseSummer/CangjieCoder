@@ -231,6 +231,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
 }
 
 func buildPlanPrompt(context: AgentPlanningContext): String {
+    // Six steps (from agent_core.cj) keeps model plans bounded while still
+    // fitting the common inspect + read-config + analyze + mutate + build + test workflow.
     return """
 You are the single-agent planner for CangjieCoder.
 
