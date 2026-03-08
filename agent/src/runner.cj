@@ -128,8 +128,9 @@ func runAgent(config: AgentConfig): Int64 {
     var allOk = true
     var round: Int64 = 0
     while (round < config.maxRounds) {
-        // 每轮都刷新工作区状态，让 replanning 能看到前一轮真实修改结果，
-        // 而不是基于过期快照继续做错误决策。
+        /* 每轮都刷新工作区状态，让 replanning 能看到前一轮真实修改结果，
+         * 而不是基于过期快照继续做错误决策。
+         */
         let context = planningContext(client, config, toolsJson)
         let planTurn = if (round == 0) {
             client.conversationTurn(buildPlanPrompt(context), sessionId: sessionId)

@@ -9,8 +9,9 @@ import stdx.encoding.json.*
 const DEFAULT_PROVIDER: String = "kimi"
 const DEFAULT_MODEL: String = "kimi-k2.5"
 const DEFAULT_MAX_ROUNDS: Int64 = 2
-// 将单轮计划上限限制为 6，既能覆盖“查看 -> 读配置 -> 分析 -> 修改 ->
-// 构建 -> 测试”的常见闭环，又能避免模型一次输出过长计划导致执行发散。
+/* 将单轮计划上限限制为 6，既能覆盖“查看 -> 读配置 -> 分析 -> 修改 ->
+ * 构建 -> 测试”的常见闭环，又能避免模型一次输出过长计划导致执行发散。
+ */
 const MAX_PLAN_STEPS: Int64 = 6
 const MAX_TRANSCRIPT_LINES: Int64 = 12
 
