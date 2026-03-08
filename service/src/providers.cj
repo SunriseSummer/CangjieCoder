@@ -78,6 +78,8 @@ func providerResponseToText(body: String): String {
             }
         }
     } catch (e: Exception) {
+        // Preserve the raw body when the provider response is not in the expected
+        // chat-completions shape so callers still receive diagnostic detail.
         return body
     }
     return body
@@ -116,6 +118,8 @@ func chatWithProvider(providerName: String,
 
             requestObject.put("messages", messages)
 
+            // HTTPS providers share the same request shape, so transport selection
+            // is reduced to whether TLS needs to be enabled on the client.
             let clientBuilder = if (provider.baseUrl.startsWith("https://")) {
                 let tlsConfig = TlsClientConfig()
                 ClientBuilder().tlsConfig(tlsConfig)
@@ -135,6 +139,8 @@ func chatWithProvider(providerName: String,
                     if (!referer.isEmpty()) {
                         requestBuilder = requestBuilder.header("HTTP-Referer", referer)
                     }
+                    // OpenRouter accepts optional attribution headers that do not
+                    // apply to the other OpenAI-compatible providers.
                     if (!title.isEmpty()) {
                         requestBuilder = requestBuilder.header("X-Title", title)
                     }

@@ -27,6 +27,8 @@ func extractJsonObjectText(text: String): String {
         case Some(value) => value
         case None => return ""
     }
+    // Use the first opening brace and the last reachable closing brace as a
+    // tolerant fallback because provider replies may include prose around the JSON.
     var end: Int64 = text.size - 1
     while (end >= start) {
         if (text[end..end + 1] == "}") {
@@ -114,6 +116,8 @@ func normalizePlanSteps(steps: Array<PlannedToolCall>, allowedTools: Array<Strin
         if (seenKeys.contains(stepKey)) {
             continue
         }
+        // Deduplicate by tool + serialized arguments so repeated replan output
+        // does not waste a limited execution budget.
         seenKeys.add(stepKey)
         results.add(PlannedToolCall(tool, step.arguments, step.reason))
         if (results.size >= MAX_PLAN_STEPS) {
@@ -175,6 +179,8 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
         normalized.contains("json parser")) {
         let arguments = JsonObject()
         arguments.put("path", JsonString(extractTargetPathFromPrompt(prompt)))
+        // New-project prompts benefit from a deterministic fast path because the
+        // bundled JsonParser example is the only curated bootstrap target today.
         steps.add(PlannedToolCall("project.bootstrap_json_parser", arguments, "Bootstrap the starter project for a new-project style request."))
         return AgentPlan("Bootstrap a starter project and validate it locally.", steps.toArray())
     }
@@ -213,6 +219,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
             match (root.get("steps")) {
                 case Some(stepsValue) =>
                     let steps = stepsValue.asArray()
+                    // An explicit empty array is treated as a valid "done" signal
+                    // rather than forcing the local fallback planner to run.
                     if (steps.size() == 0) {
                         return AgentPlan(jsonField(root, "summary", fallback: "Model indicates no further work is required"), [])
                     }
@@ -243,6 +251,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
     }
     let fallback = buildFallbackPlan(context)
     let normalizedFallback = normalizePlanSteps(fallback.steps, allowedTools)
+    // Even the fallback path returns at least one safe introspection step so the
+    // runner never reaches execution with an entirely empty plan by accident.
     return AgentPlan(fallback.summary, if (normalizedFallback.isEmpty()) {
         [PlannedToolCall("workspace.list_files", JsonObject(), "Fallback to a safe workspace listing step.")]
     } else {
@@ -312,6 +322,8 @@ func buildReplanPrompt(userPrompt: String,
         }
     }
 
+    // Replan prompts feed the model only compact summaries so later rounds stay
+    // grounded in prior observations without replaying entire tool payloads.
     return """
 You are continuing a CangjieCoder agent run using a reflect-plan-act-review loop.
 

@@ -17,6 +17,8 @@ func extractMcpBodies(raw: String): Array<String> {
     let bodies = ArrayList<String>()
     var offset: Int64 = 0
     while (offset < raw.size) {
+        // MCP stdio may emit multiple framed JSON-RPC responses in one stdout burst,
+        // so decode them sequentially instead of assuming a single frame.
         let headerEnd = match (raw.indexOf(MCP_HEADER_DELIMITER, offset)) {
             case Some(value) => value
             case None => break
@@ -54,6 +56,8 @@ func buildJsonRpcRequest(id: Int64, method: String, params: JsonValue): String {
 func resolveServiceCommand(serviceDir: String, workspaceRoot: String): String {
     let releaseBinary = "${serviceDir}/target/release/bin/main"
     let debugBinary = "${serviceDir}/target/debug/bin/main"
+    // Prefer an existing binary for speed, but preserve a source-only fallback so
+    // the agent can still run against a fresh checkout.
     let command = if (exists(releaseBinary)) {
         shellQuote(releaseBinary)
     } else if (exists(debugBinary)) {
@@ -110,6 +114,8 @@ class ServiceClient {
 
     private func invokeMcp(request: String): JsonObject {
         let initialize = buildJsonRpcRequest(1, "initialize", JsonObject())
+        // Each isolated stdio invocation begins with initialize so the service can
+        // answer tool calls even when we do not keep a long-lived MCP process.
         let payload = "${encodeMcpFrame(initialize)}${encodeMcpFrame(request)}"
         let commandTemplate = resolveServiceCommand(config.serviceDir, config.workspaceRoot)
         let script = commandTemplate.replace("__PAYLOAD__", shellQuote(payload))
@@ -127,6 +133,8 @@ class ServiceClient {
         if (bodies.isEmpty()) {
             throw IllegalArgumentException("service returned no MCP response: ${shortPreview(stderr, maxLines: 8)}")
         }
+        // The final frame corresponds to the requested method because initialize
+        // always runs first in the same payload.
         return parseJsonObject(bodies[bodies.size - 1])
     }
 }

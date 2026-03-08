@@ -78,6 +78,8 @@ func shouldTriggerFollowUpRound(prompt: String,
                                 allExecutions: Array<ToolExecution>,
                                 currentRound: Int64,
                                 maxRounds: Int64): Bool {
+    // Follow-up rounds are reserved for incomplete or unstable outcomes; a fully
+    // successful round exits early to keep the agent bounded and predictable.
     if (currentRound + 1 >= maxRounds || roundExecutions.isEmpty()) {
         return false
     }
@@ -118,6 +120,8 @@ func runAgent(config: AgentConfig): Int64 {
     var allOk = true
     var round: Int64 = 0
     while (round < config.maxRounds) {
+        // Refresh workspace state on every round so replanning sees mutations from
+        // previous tool calls instead of relying on stale snapshots.
         let context = planningContext(client, config, toolsJson)
         let planTurn = if (round == 0) {
             client.conversationTurn(buildPlanPrompt(context), sessionId: sessionId)
@@ -127,6 +131,8 @@ func runAgent(config: AgentConfig): Int64 {
         let plan = parsePlan(planTurn.reply, context)
         plans.add(plan)
 
+        // Validation steps are appended before duplicate filtering so automatic
+        // build/test checks still participate in the same deduplication rules.
         let steps = filterPendingSteps(appendValidationSteps(plan.steps, allowedTools: allowedTools), executions.toArray())
         printRoundPlan(round + 1, plan, steps)
         if (steps.isEmpty()) {
@@ -156,6 +162,8 @@ func runAgent(config: AgentConfig): Int64 {
 
     let finalPlan = AgentPlan(mergedPlanSummary(plans.toArray()), [])
     let remoteFinalTurn = client.conversationTurn(buildFinalPrompt(config.prompt, finalPlan, executions.toArray()), sessionId: sessionId)
+    // Final summarization degrades to a local transcript when the provider is
+    // unavailable so the agent still returns a useful deterministic result.
     let finalReply = if (!remoteFinalTurn.success ||
         remoteFinalTurn.reply.startsWith("Provider request failed:") ||
         remoteFinalTurn.reply.startsWith("Missing API key:") ||

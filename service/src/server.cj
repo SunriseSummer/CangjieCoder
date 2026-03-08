@@ -228,6 +228,8 @@ func mcpToolCallResultJson(content: String): String {
 }
 
 func providerReplySucceeded(reply: String): Bool {
+    // Provider failures are surfaced as plain-text sentinel prefixes so the
+    // agent can degrade locally without parsing provider-specific error JSON.
     return !reply.startsWith("Missing API key:") &&
         !reply.startsWith("Unsupported provider:") &&
         !reply.startsWith("Provider request failed:")
@@ -243,6 +245,8 @@ func astEditSucceeded(message: String): Bool {
 func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
     let fullPath = ensureWorkspacePath(repoRoot, path)
     let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
+    // Prefer richer structural tools first, then fall back to progressively more
+    // generic analyzers so the caller gets the best available signal locally.
     let (treeOk, treeStdout, treeStderr) = runCommandWithCapturedOutput(treeSitterCommand,
         ["parse", fullPath],
         repoRoot)
@@ -302,6 +306,8 @@ func chatWithMemoryJson(repoRoot: String,
                         analyzePath: String,
                         sessionId: String): String {
     let session = conversations.getOrCreate(sessionId: sessionId)
+    // Analyzer output is injected into the system prompt instead of the user turn
+    // so provider-side memory still sees a clean conversational transcript.
     let analysis = if (analyzePath.trimAscii().isEmpty()) {
         ""
     } else {
@@ -313,6 +319,8 @@ func chatWithMemoryJson(repoRoot: String,
         systemPrompt = "${systemPrompt}\n\nRecent conversation turns:\n${historyPrompt}"
     }
     let reply = chatWithProvider(provider, model, systemPrompt, prompt)
+    // Record both sides after the provider call so a failed reply is still visible
+    // to later turns and to MCP clients inspecting the conversation state.
     session.addTurn("user", prompt)
     session.addTurn("assistant", reply)
 
