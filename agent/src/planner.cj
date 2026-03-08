@@ -251,7 +251,7 @@ Return strict JSON only with this shape:
   "summary": "one sentence",
   "steps": [
     {
-      "tool": "workspace.list_files",
+      "tool": "<tool_name_from_list>",
       "arguments": {},
       "reason": "why"
     }

@@ -63,9 +63,11 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     if (parentPath.toString().isEmpty()) {
         throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
     }
-    var existingParent = parentPath.toString()
+    var existingParentPath = parentPath
+    var existingParent = existingParentPath.toString()
     while (!existingParent.isEmpty() && !exists(existingParent)) {
-        existingParent = Path(existingParent).parent.toString()
+        existingParentPath = existingParentPath.parent
+        existingParent = existingParentPath.toString()
     }
     if (existingParent.isEmpty()) {
         throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")

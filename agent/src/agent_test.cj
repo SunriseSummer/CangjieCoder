@@ -65,9 +65,10 @@ class AgentHelpersTest {
             "{\"ok\":true,\"data\":{\"projects\":[]}}"
         )
         let plan = parsePlan("", context)
-        @Expect(plan.steps.size >= 3)
+        @Expect(plan.steps.size == 4)
         @Expect(plan.steps[0].tool, "workspace.list_files")
         @Expect(plan.steps[1].tool, "workspace.read_file")
         @Expect(plan.steps[2].tool, "workspace.read_file")
+        @Expect(plan.steps[3].tool, "cangjie.analyze_file")
     }
 }
