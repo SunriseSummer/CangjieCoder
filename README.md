@@ -2,6 +2,10 @@
 
 一个用仓颉编程语言实现的轻量 AI 软件开发工具骨架，专门优化仓颉项目开发场景。
 
+补充文档：
+
+- [`docs/serve-mode-and-roadmap.md`](docs/serve-mode-and-roadmap.md)：详细说明 `serve` 模式怎么用、当前能否接入外部 AI 工具、当前能力边界，以及后续版本规划建议
+
 ## 当前实现能力
 
 - 优雅可扩展的模块化架构：`skills` / `providers` / `conversation` / `projects` / `mcp_protocol` / `ast_edit` / `server`
