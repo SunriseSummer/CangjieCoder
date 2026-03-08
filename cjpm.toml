@@ -1,7 +1,7 @@
 [package]
 name = "cangjiecoder"
 version = "0.1.0"
-cjc-version = "0.60.5"
+cjc-version = "1.0.5"
 output-type = "executable"
 description = "A lightweight, extensible AI coding tool focused on Cangjie development."
 

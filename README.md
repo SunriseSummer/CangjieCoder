@@ -99,6 +99,7 @@ src/
 
 - SDK：<https://github.com/SunriseSummer/CangjieSDK/releases/tag/1.0.5>
 - `stdx` 路径通过环境变量 `STDX_PATH` 注入到 `cjpm.toml`
+- 本仓库主项目与示例项目现在都按 **Cangjie SDK 1.0.5** 对齐
 
 示例：
 
@@ -131,6 +132,38 @@ export CANGJIE_SDK_HOME=/path/to/cangjie
 ```
 
 这样 CangjieCoder 会自动尝试从 `${CANGJIE_SDK_HOME}/tools/bin/LSPServer` 发现 LSP。
+
+### 4. 真实构建/运行/测试验证
+
+如果要在本地或 CI 中真实验证这一版修改，建议直接使用 release 里的以下资产：
+
+- `cangjie-sdk-linux-x64-1.0.5.tar.gz`
+- `cangjie-stdx-linux-x64-1.0.5.1.zip`
+
+参考步骤：
+
+```bash
+# 1) 解压 SDK 与 stdx
+tar -xzf cangjie-sdk-linux-x64-1.0.5.tar.gz
+unzip cangjie-stdx-linux-x64-1.0.5.1.zip
+
+# 2) 配置环境变量（按实际解压路径调整）
+export CANGJIE_SDK_HOME=/path/to/cangjie-sdk
+export PATH="${CANGJIE_SDK_HOME}/tools/bin:${PATH}"
+export STDX_PATH=/path/to/cangjie-stdx-linux-x64-1.0.5.1/dynamic/stdx
+export LD_LIBRARY_PATH="${CANGJIE_SDK_HOME}/runtime/lib/linux_x86_64_llvm:${CANGJIE_SDK_HOME}/tools/lib/linux_x86_64_llvm:${LD_LIBRARY_PATH}"
+
+# 3) 构建并测试主项目
+cjpm build
+cjpm test
+
+# 4) 构建并测试 JsonParser 示例
+cd examples/json_parser
+cjpm build
+cjpm test
+```
+
+> 当前这个 Copilot 沙箱环境里没有预装 `cjpm` / `cjc`，也不能直接通过 bash 下载 release 资产，所以如果没有额外注入 SDK，只能先完成代码级与进程内测试，无法在沙箱内完成真实 SDK 级构建验证。
 
 ## 使用方式
 
