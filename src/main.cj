@@ -7,8 +7,11 @@ func printUsage(): Unit {
     println("  cangjiecoder serve [--repo PATH] [--host HOST] [--port PORT]")
     println("  cangjiecoder skills [--repo PATH]")
     println("  cangjiecoder skills-search <query> [--repo PATH]")
+    println("  cangjiecoder examples [--repo PATH]")
+    println("  cangjiecoder bootstrap-json-parser <path> [--repo PATH]")
     println("  cangjiecoder providers")
     println("  cangjiecoder analyze <path> [--repo PATH]")
+    println("  cangjiecoder lsp-status [--repo PATH]")
     println("")
     println("Environment:")
     println("  STDX_PATH            stdx binary dependency directory")
@@ -17,6 +20,8 @@ func printUsage(): Unit {
     println("  TREE_SITTER_CANGJIE  tree-sitter command with Cangjie grammar support")
     println("  CJLINT_COMMAND       override cjlint command")
     println("  CJC_COMMAND          override cjc command")
+    println("  CANGJIE_LSP_COMMAND  explicit path/command for the Cangjie LSP binary")
+    println("  CANGJIE_SDK_HOME     SDK home used to auto-discover tools/bin/LSPServer")
 }
 
 main(args: Array<String>): Int64 {
@@ -51,6 +56,18 @@ main(args: Array<String>): Int64 {
         case "providers" =>
             println(listProvidersText())
             return 0
+        case "examples" =>
+            for (project in listExampleProjects(config.repoRoot)) {
+                println("${project.id}: ${project.description}")
+            }
+            return 0
+        case "bootstrap-json-parser" =>
+            if (args.size < 2) {
+                eprintln("bootstrap-json-parser requires a target path")
+                return 1
+            }
+            println(bootstrapJsonParserProject(config.repoRoot, args[1]))
+            return 0
         case "analyze" =>
             if (args.size < 2) {
                 eprintln("analyze requires a file path")
@@ -60,6 +77,14 @@ main(args: Array<String>): Int64 {
             println("[${result.engine}] ${result.summary}")
             println(result.output)
             return if (result.success) { 0 } else { 1 }
+        case "lsp-status" =>
+            let status = inspectLspStatus(config.repoRoot)
+            println(status.summary)
+            if (!status.command.isEmpty()) {
+                println("command: ${status.command}")
+            }
+            println(status.sourceHint)
+            return if (status.available) { 0 } else { 1 }
         case "help" =>
             printUsage()
             return 0

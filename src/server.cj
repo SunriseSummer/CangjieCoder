@@ -66,6 +66,30 @@ func analysisJson(result: AnalysisResult): String {
     return root.toString()
 }
 
+func exampleProjectsJson(repoRoot: String): String {
+    let array = JsonArray()
+    for (project in listExampleProjects(repoRoot)) {
+        let item = JsonObject()
+        item.put("id", JsonString(project.id))
+        item.put("name", JsonString(project.name))
+        item.put("description", JsonString(project.description))
+        item.put("templatePath", JsonString(project.templatePath))
+        array.add(item)
+    }
+    let root = JsonObject()
+    root.put("projects", array)
+    return root.toString()
+}
+
+func lspStatusJson(status: LspStatus): String {
+    let root = JsonObject()
+    root.put("available", JsonBool(status.available))
+    root.put("command", JsonString(status.command))
+    root.put("summary", JsonString(status.summary))
+    root.put("sourceHint", JsonString(status.sourceHint))
+    return root.toString()
+}
+
 func jsonRpcResult(idJson: String, resultJson: String): String {
     return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
 }
@@ -99,6 +123,21 @@ func availableToolsJson(): String {
     analyze.put("name", JsonString("cangjie.analyze_file"))
     analyze.put("description", JsonString("Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file."))
     tools.add(analyze)
+
+    let listExamples = JsonObject()
+    listExamples.put("name", JsonString("project.list_examples"))
+    listExamples.put("description", JsonString("List built-in Cangjie example projects that can be bootstrapped into the workspace."))
+    tools.add(listExamples)
+
+    let bootstrapProject = JsonObject()
+    bootstrapProject.put("name", JsonString("project.bootstrap_json_parser"))
+    bootstrapProject.put("description", JsonString("Copy the built-in JsonParser example project into a target workspace path."))
+    tools.add(bootstrapProject)
+
+    let lspStatus = JsonObject()
+    lspStatus.put("name", JsonString("cangjie.lsp_status"))
+    lspStatus.put("description", JsonString("Inspect whether a Cangjie LSP binary is configured or discoverable."))
+    tools.add(lspStatus)
 
     let root = JsonObject()
     root.put("tools", tools)
@@ -166,6 +205,15 @@ func callMcpTool(repoRoot: String, registry: SkillRegistry, toolName: String, ar
         case "cangjie.analyze_file" =>
             let path = jsonField(args, "path")
             return analysisJson(analyzeCangjieFile(repoRoot, path))
+        case "project.list_examples" =>
+            return exampleProjectsJson(repoRoot)
+        case "project.bootstrap_json_parser" =>
+            let path = jsonField(args, "path")
+            let root = JsonObject()
+            root.put("message", JsonString(bootstrapJsonParserProject(repoRoot, path)))
+            return root.toString()
+        case "cangjie.lsp_status" =>
+            return lspStatusJson(inspectLspStatus(repoRoot))
         case _ =>
             let root = JsonObject()
             root.put("message", JsonString("Unknown tool: ${toolName}"))
@@ -247,6 +295,13 @@ func startServer(config: AppConfig): Unit {
             .body(providersJson())
     })
 
+    server.distributor.register("/projects/examples", {
+        ctx =>
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(exampleProjectsJson(config.repoRoot))
+    })
+
     server.distributor.register("/skills", {
         ctx =>
         ctx.responseBuilder
@@ -270,6 +325,24 @@ func startServer(config: AppConfig): Unit {
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(analysisJson(analyzeCangjieFile(config.repoRoot, path)))
+    })
+
+    server.distributor.register("/bootstrap/json-parser", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        let path = jsonField(request, "path")
+        let root = JsonObject()
+        root.put("message", JsonString(bootstrapJsonParserProject(config.repoRoot, path)))
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(root.toString())
+    })
+
+    server.distributor.register("/lsp/status", {
+        ctx =>
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(lspStatusJson(inspectLspStatus(config.repoRoot)))
     })
 
     server.distributor.register("/chat", {
