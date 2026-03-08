@@ -8,7 +8,7 @@ import stdx.encoding.json.*
 import stdx.net.http.*
 
 const WORKSPACE_COMMAND_OUTPUT_PREVIEW_LINES: Int64 = 20
-const ALLOWED_WORKSPACE_COMMANDS: Array<String> = ["cjpm", "cjc", "cjlint", "tree-sitter", "find", "grep"]
+let allowedWorkspaceCommands: Array<String> = ["cjpm", "cjc", "cjlint", "tree-sitter", "find", "grep"]
 
 func jsonField(obj: JsonObject, key: String, fallback!: String = ""): String {
     match (obj.get(key)) {
@@ -49,7 +49,8 @@ func jsonStringArrayField(obj: JsonObject, key: String): Array<String> {
                 case JsArray =>
                     let items = value.asArray()
                     let results = ArrayList<String>()
-                    for (index in 0..items.size) {
+                    var index: Int64 = 0
+                    while (index < items.size()) {
                         match (items.get(index)) {
                             case Some(itemValue) =>
                                 match (itemValue.kind()) {
@@ -58,6 +59,7 @@ func jsonStringArrayField(obj: JsonObject, key: String): Array<String> {
                                 }
                             case None => ()
                         }
+                        index += 1
                     }
                     return results.toArray()
                 case JsString =>
@@ -171,7 +173,7 @@ func toolResultJson(ok: Bool, summary: String, data!: JsonValue = JsonObject()):
 func toolMessageJson(ok: Bool, summary: String, message: String): String {
     let data = JsonObject()
     data.put("message", JsonString(message))
-    return toolResultJson(ok, summary, data)
+    return toolResultJson(ok, summary, data: data)
 }
 
 func toolCommandResultJson(command: String,
@@ -197,7 +199,7 @@ func toolCommandResultJson(command: String,
     } else {
         "Command failed: ${command}"
     }
-    return toolResultJson(ok, summary, data)
+    return toolResultJson(ok, summary, data: data)
 }
 
 func mcpToolCallResultJson(content: String): String {
@@ -357,7 +359,7 @@ func workspaceListFilesJson(repoRoot: String, path: String, limit!: Int64 = 200)
     data.put("path", JsonString(workspaceRelativePath(repoRoot, startPath)))
     data.put("count", JsonInt(count))
     data.put("files", files)
-    return toolResultJson(true, "Listed workspace files", data)
+    return toolResultJson(true, "Listed workspace files", data: data)
 }
 
 func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limit!: Int64 = 20): String {
@@ -409,12 +411,12 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
     data.put("path", JsonString(workspaceRelativePath(repoRoot, startPath)))
     data.put("count", JsonInt(count))
     data.put("matches", matches)
-    return toolResultJson(true, if (count == 0) { "No workspace matches found" } else { "Found workspace text matches" }, data)
+    return toolResultJson(true, if (count == 0) { "No workspace matches found" } else { "Found workspace text matches" }, data: data)
 }
 
 func isAllowedWorkspaceCommand(command: String): Bool {
     let normalized = command.trimAscii().toAsciiLower()
-    for (allowed in ALLOWED_WORKSPACE_COMMANDS) {
+    for (allowed in allowedWorkspaceCommands) {
         if (normalized == allowed) {
             return true
         }
@@ -449,7 +451,7 @@ func callMcpTool(repoRoot: String,
                 let query = jsonField(args, "query")
                 let matches = registry.search(query, limit: 8)
                 let data = parseJsonObject(skillsJson(matches))
-                return toolResultJson(true, "Skills search completed", data)
+                return toolResultJson(true, "Skills search completed", data: data)
             case "workspace.read_file" =>
                 let path = jsonField(args, "path")
                 let fullPath = ensureWorkspacePath(repoRoot, path)
@@ -458,7 +460,7 @@ func callMcpTool(repoRoot: String,
                 data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))
                 data.put("content", JsonString(content))
                 data.put("bytes", JsonInt(content.toArray().size))
-                return toolResultJson(true, "Read workspace file", data)
+                return toolResultJson(true, "Read workspace file", data: data)
             case "workspace.list_files" =>
                 return workspaceListFilesJson(repoRoot,
                     jsonField(args, "path"),
@@ -488,10 +490,10 @@ func callMcpTool(repoRoot: String,
                 let path = jsonField(args, "path")
                 let analysis = analyzeCangjieFile(repoRoot, path)
                 let data = parseJsonObject(analysisJson(analysis))
-                return toolResultJson(analysis.success, analysis.summary, data)
+                return toolResultJson(analysis.success, analysis.summary, data: data)
             case "project.list_examples" =>
                 let data = parseJsonObject(exampleProjectsJson(repoRoot))
-                return toolResultJson(true, "Listed example projects", data)
+                return toolResultJson(true, "Listed example projects", data: data)
             case "project.bootstrap_json_parser" =>
                 let path = jsonField(args, "path")
                 let message = bootstrapJsonParserProject(repoRoot, path)
@@ -501,10 +503,10 @@ func callMcpTool(repoRoot: String,
                 let session = conversations.createSession()
                 let data = JsonObject()
                 data.put("sessionId", JsonString(session.sessionId))
-                return toolResultJson(true, "Created conversation session", data)
+                return toolResultJson(true, "Created conversation session", data: data)
             case "conversation.get_history" =>
                 let history = parseJsonObject(conversations.historyJson(jsonField(args, "sessionId")))
-                return toolResultJson(true, "Loaded conversation history", history)
+                return toolResultJson(true, "Loaded conversation history", data: history)
             case "conversation.chat" =>
                 let chat = parseJsonObject(chatWithMemoryJson(repoRoot,
                     registry,
@@ -515,14 +517,14 @@ func callMcpTool(repoRoot: String,
                     jsonField(args, "analyzePath"),
                     jsonField(args, "sessionId")))
                 let ok = jsonField(chat, "success") == "true"
-                return toolResultJson(ok, if (ok) { "Conversation turn completed" } else { "Conversation turn failed" }, chat)
+                return toolResultJson(ok, if (ok) { "Conversation turn completed" } else { "Conversation turn failed" }, data: chat)
             case "cangjie.lsp_status" =>
                 let status = parseJsonObject(lspStatusJson(inspectLspStatus(repoRoot)))
-                return toolResultJson(true, "Loaded Cangjie LSP status", status)
+                return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
             case "cangjie.lsp_probe" =>
                 let result = parseJsonObject(lspProbeJson(probeLspServer(repoRoot)))
                 let ok = jsonField(result, "success") == "true"
-                return toolResultJson(ok, if (ok) { "LSP probe succeeded" } else { "LSP probe did not complete cleanly" }, result)
+                return toolResultJson(ok, if (ok) { "LSP probe succeeded" } else { "LSP probe did not complete cleanly" }, data: result)
             case "cangjie.edit_ast_node" =>
                 let path = jsonField(args, "path")
                 let nodeType = jsonField(args, "nodeType")
@@ -650,8 +652,10 @@ func readStdioFrame(reader: ConsoleReader): ?String {
         if (bytesRead <= 0) {
             return None
         }
-        for (index in 0..bytesRead) {
+        var index: Int64 = 0
+        while (index < bytesRead) {
             bodyBytes[offset + index] = chunk[index]
+            index += 1
         }
         offset += bytesRead
     }
