@@ -143,9 +143,27 @@ func extractPromptFilePath(prompt: String, workspaceFiles: Array<String>): Strin
     return ""
 }
 
+func promptNeedsAnalysis(prompt: String): Bool {
+    return containsAny(prompt, ["分析", "重构", "优化", "实现", "修复", "设计", "架构", "analyze", "refactor", "optimize", "implement", "fix", "design", "architecture"])
+}
+
+func promptNeedsMutation(prompt: String): Bool {
+    return containsAny(prompt, ["修改", "修复", "重构", "优化", "实现", "新增", "创建", "replace", "fix", "refactor", "optimize", "implement", "create", "edit"])
+}
+
+func promptNeedsVerification(prompt: String): Bool {
+    let normalized = prompt.toAsciiLower()
+    return normalized.contains("build") ||
+        normalized.contains("test") ||
+        prompt.contains("构建") ||
+        prompt.contains("测试") ||
+        prompt.contains("验证")
+}
+
 func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let prompt = context.userPrompt
     let normalized = prompt.toAsciiLower()
+    let needsMutation = promptNeedsMutation(prompt)
     let workspaceFiles = extractWorkspaceFiles(context.workspaceSnapshot)
     let steps = ArrayList<PlannedToolCall>()
 
@@ -170,17 +188,16 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     }
 
     let candidateFile = extractPromptFilePath(prompt, workspaceFiles)
-    if (!candidateFile.isEmpty() &&
-        containsAny(prompt, ["分析", "重构", "优化", "analyze", "refactor", "optimize", "实现", "修复"])) {
+    if (!candidateFile.isEmpty() && promptNeedsAnalysis(prompt)) {
         let arguments = JsonObject()
         arguments.put("path", JsonString(candidateFile))
         steps.add(PlannedToolCall("cangjie.analyze_file", arguments, "Analyze a representative Cangjie source file related to the request."))
     }
 
-    if (normalized.contains("build") || prompt.contains("构建")) {
-        steps.add(PlannedToolCall("workspace.run_build", JsonObject(), "Run a build because the request explicitly mentions compilation."))
+    if (needsMutation || normalized.contains("build") || prompt.contains("构建")) {
+        steps.add(PlannedToolCall("workspace.run_build", JsonObject(), "Run a build because the request implies code changes or explicitly mentions compilation."))
     }
-    if (normalized.contains("test") || prompt.contains("测试") || prompt.contains("验证")) {
+    if (needsMutation || normalized.contains("test") || prompt.contains("测试") || prompt.contains("验证")) {
         steps.add(PlannedToolCall("workspace.run_test", JsonObject(), "Run tests because the request explicitly mentions validation."))
     }
     return AgentPlan("Use local heuristics to inspect the workspace and execute requested validation.", steps.toArray())
@@ -196,6 +213,9 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
             match (root.get("steps")) {
                 case Some(stepsValue) =>
                     let steps = stepsValue.asArray()
+                    if (steps.size() == 0) {
+                        return AgentPlan(jsonField(root, "summary", fallback: "Model indicates no further work is required"), [])
+                    }
                     var index: Int64 = 0
                     while (index < steps.size()) {
                         match (steps.get(index)) {
@@ -266,6 +286,58 @@ Rules:
 - if the user asks for a new project, you may use project.bootstrap_json_parser
 - prefer reading configuration/docs or analyzing code before destructive changes
 - include workspace.run_build / workspace.run_test when they are clearly needed
+- do not wrap the JSON in markdown
+"""
+}
+
+func buildReplanPrompt(userPrompt: String,
+                       previousPlans: Array<AgentPlan>,
+                       executions: Array<ToolExecution>,
+                       context: AgentPlanningContext): String {
+    let planLines = ArrayList<String>()
+    for (plan in previousPlans) {
+        planLines.add("- ${plan.summary}")
+        for (step in plan.steps) {
+            planLines.add("  - ${step.tool}: ${step.reason}")
+        }
+    }
+
+    let executionLines = ArrayList<String>()
+    for (execution in executions) {
+        executionLines.add("- tool=${execution.tool}")
+        executionLines.add("  ok=${execution.ok}")
+        executionLines.add("  summary=${execution.summary}")
+        if (!execution.preview.trimAscii().isEmpty()) {
+            executionLines.add("  preview=${execution.preview}")
+        }
+    }
+
+    return """
+You are continuing a CangjieCoder agent run using a reflect-plan-act-review loop.
+
+Original user request:
+${userPrompt}
+
+Previous plan summaries:
+${String.join(planLines.toArray(), delimiter: "\n")}
+
+Observed tool executions:
+${String.join(executionLines.toArray(), delimiter: "\n")}
+
+Current workspace snapshot (JSON):
+${context.workspaceSnapshot}
+
+Available MCP tools (JSON):
+${context.toolsJson}
+
+Return strict JSON only with the same schema as before.
+
+Rules:
+- if the task is already complete, return {"summary":"done","steps":[]}
+- prefer targeted next steps instead of repeating already executed steps
+- if a previous step failed, focus on diagnosis, repair, or verification
+- choose at most ${MAX_PLAN_STEPS} steps
+- use only tool names from the provided tool list
 - do not wrap the JSON in markdown
 """
 }

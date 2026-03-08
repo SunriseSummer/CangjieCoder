@@ -1,12 +1,14 @@
 package cangjiecoderagent
 
 import std.collection.*
+import std.convert.*
 import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
 
 const DEFAULT_PROVIDER: String = "kimi"
 const DEFAULT_MODEL: String = "kimi-k2.5"
+const DEFAULT_MAX_ROUNDS: Int64 = 2
 // MAX_PLAN_STEPS is intentionally 6 so a single bounded plan can fit up to six
 // steps and still accommodate inspect + read-config + analyze + mutate + build + test workflows.
 const MAX_PLAN_STEPS: Int64 = 6
@@ -17,6 +19,7 @@ struct AgentConfig {
                        let serviceDir: String,
                        let provider: String,
                        let model: String,
+                       let maxRounds: Int64,
                        let prompt: String) {}
 }
 
@@ -33,9 +36,16 @@ struct AgentPlan {
 
 struct ToolExecution {
     public ToolExecution(let tool: String,
+                         let arguments: JsonObject,
                          let ok: Bool,
                          let summary: String,
                          let preview: String) {}
+}
+
+struct ModelTurn {
+    public ModelTurn(let reply: String,
+                     let sessionId: String,
+                     let success: Bool) {}
 }
 
 struct AgentPlanningContext {
@@ -51,6 +61,7 @@ func parseConfig(args: Array<String>): AgentConfig {
     var serviceDirExplicit = false
     var provider = DEFAULT_PROVIDER
     var model = DEFAULT_MODEL
+    var maxRounds = DEFAULT_MAX_ROUNDS
     var prompt = ""
     var index = 0
     while (index < args.size) {
@@ -68,6 +79,9 @@ func parseConfig(args: Array<String>): AgentConfig {
         } else if (current == "--model" && index + 1 < args.size) {
             model = args[index + 1]
             index += 1
+        } else if (current == "--max-rounds" && index + 1 < args.size) {
+            maxRounds = Int64.parse(args[index + 1])
+            index += 1
         } else if (current == "--prompt" && index + 1 < args.size) {
             let promptParts = ArrayList<String>()
             var promptIndex = index + 1
@@ -83,7 +97,8 @@ func parseConfig(args: Array<String>): AgentConfig {
     if (!serviceDirExplicit) {
         serviceDir = resolveDefaultServiceDir(workspaceRoot)
     }
-    return AgentConfig(workspaceRoot, serviceDir, provider, model, prompt)
+    let normalizedMaxRounds = if (maxRounds < 1) { 1 } else { maxRounds }
+    return AgentConfig(workspaceRoot, serviceDir, provider, model, normalizedMaxRounds, prompt)
 }
 
 func resolveDefaultServiceDir(workspaceRoot: String): String {

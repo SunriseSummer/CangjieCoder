@@ -22,6 +22,13 @@ func builtinProviders(): Array<ProviderSpec> {
             "https://open.bigmodel.cn/api/paas/v4/chat/completions",
             "GLM_API_KEY",
             "glm-4.5"
+        ),
+        ProviderSpec(
+            "openrouter",
+            "OpenRouter",
+            "https://openrouter.ai/api/v1/chat/completions",
+            "OPENROUTER_API_KEY",
+            "openrouter/free"
         )
     ]
 }
@@ -42,6 +49,14 @@ func listProvidersText(): String {
         lines.add("${provider.name}: ${provider.displayName} (${provider.defaultModel})")
     }
     return String.join(lines.toArray(), delimiter: "\n")
+}
+
+func providerNamesText(): String {
+    let names = ArrayList<String>()
+    for (provider in builtinProviders()) {
+        names.add(provider.name)
+    }
+    return String.join(names.toArray(), delimiter: ", ")
 }
 
 func providerResponseToText(body: String): String {
@@ -109,13 +124,22 @@ func chatWithProvider(providerName: String,
             }
             let client = clientBuilder.build()
             try {
-                let request = HttpRequestBuilder()
+                var requestBuilder = HttpRequestBuilder()
                     .post()
                     .url(provider.baseUrl)
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer ${apiKey}")
-                    .body(requestObject.toString())
-                    .build()
+                if (provider.name == "openrouter") {
+                    let referer = (getVariable("OPENROUTER_HTTP_REFERER") ?? "").trimAscii()
+                    let title = (getVariable("OPENROUTER_APP_TITLE") ?? "").trimAscii()
+                    if (!referer.isEmpty()) {
+                        requestBuilder = requestBuilder.header("HTTP-Referer", referer)
+                    }
+                    if (!title.isEmpty()) {
+                        requestBuilder = requestBuilder.header("X-Title", title)
+                    }
+                }
+                let request = requestBuilder.body(requestObject.toString()).build()
 
                 let response = client.send(request)
                 let body = StringReader(response.body).readToEnd()
@@ -126,6 +150,6 @@ func chatWithProvider(providerName: String,
                 return "Provider request failed: ${e}"
             }
         case None =>
-            return "Unsupported provider: ${providerName}. Supported providers: kimi, glm"
+            return "Unsupported provider: ${providerName}. Supported providers: ${providerNamesText()}"
     }
 }

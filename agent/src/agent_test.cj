@@ -28,6 +28,8 @@ class AgentHelpersTest {
         let config = parseConfig([
             "--workspace",
             "/home/runner/work/CangjieCoder/CangjieCoder",
+            "--max-rounds",
+            "3",
             "--prompt",
             "请",
             "创建",
@@ -35,6 +37,7 @@ class AgentHelpersTest {
             "示例项目"
         ])
         @Expect(config.prompt, "请 创建 JsonParser 示例项目")
+        @Expect(config.maxRounds, 3)
     }
 
     @TestCase
@@ -60,15 +63,51 @@ class AgentHelpersTest {
     func fallbackPlanReadsWorkspaceContextForAnalysisTasks() {
         let context = AgentPlanningContext(
             "请分析并优化这个仓颉项目",
-            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.analyze_file\"}]}",
+            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
             "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}",
             "{\"ok\":true,\"data\":{\"projects\":[]}}"
         )
         let plan = parsePlan("", context)
-        @Expect(plan.steps.size == 4)
+        @Expect(plan.steps.size == 6)
         @Expect(plan.steps[0].tool, "workspace.list_files")
         @Expect(plan.steps[1].tool, "workspace.read_file")
         @Expect(plan.steps[2].tool, "workspace.read_file")
         @Expect(plan.steps[3].tool, "cangjie.analyze_file")
+        @Expect(plan.steps[4].tool, "workspace.run_build")
+        @Expect(plan.steps[5].tool, "workspace.run_test")
+    }
+
+    @TestCase
+    func parsePlanAllowsExplicitEmptyCompletionPlan() {
+        let context = AgentPlanningContext(
+            "完成任务",
+            "{\"tools\":[{\"name\":\"workspace.list_files\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\"]}}",
+            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+        )
+        let plan = parsePlan("{\"summary\":\"done\",\"steps\":[]}", context)
+        @Expect(plan.summary, "done")
+        @Expect(plan.steps.size == 0)
+    }
+
+    @TestCase
+    func shouldTriggerFollowUpRoundAfterInspectionOnlyMutationPrompt() {
+        let roundExecutions = [
+            ToolExecution("workspace.list_files", JsonObject(), true, "ok", ""),
+            ToolExecution("workspace.read_file", JsonObject(), true, "ok", "")
+        ]
+        @Expect(shouldTriggerFollowUpRound("请修复当前工程问题", roundExecutions, roundExecutions, 0, 2))
+    }
+
+    @TestCase
+    func filterPendingStepsSkipsAlreadyExecutedStep() {
+        let arguments = JsonObject()
+        arguments.put("path", JsonString("README.md"))
+        let steps = filterPendingSteps(
+            [PlannedToolCall("workspace.read_file", arguments, "read"), PlannedToolCall("workspace.list_files", JsonObject(), "list")],
+            [ToolExecution("workspace.read_file", arguments, true, "ok", "")]
+        )
+        @Expect(steps.size == 1)
+        @Expect(steps[0].tool, "workspace.list_files")
     }
 }

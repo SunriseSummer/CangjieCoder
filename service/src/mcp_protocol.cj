@@ -61,7 +61,7 @@ func buildToolDefinitions(): Array<ToolDefinition> {
         ]),
         ToolDefinition("conversation.chat", "Run provider chat with session memory and optional analysis context.", [
             ToolArgSpec("sessionId", "string", "Existing session id, or omit to create one.", false),
-            ToolArgSpec("provider", "string", "Provider name such as kimi or glm.", false),
+            ToolArgSpec("provider", "string", "Provider name such as kimi, glm, or openrouter.", false),
             ToolArgSpec("model", "string", "Provider model override.", false),
             ToolArgSpec("prompt", "string", "User prompt.", true),
             ToolArgSpec("analyzePath", "string", "Optional source path for analyzer context.", false)

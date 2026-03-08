@@ -45,11 +45,11 @@ func appendValidationSteps(steps: Array<PlannedToolCall>, allowedTools!: Array<S
     return results.toArray()
 }
 
-func formatExecution(result: JsonObject, tool: String): ToolExecution {
+func formatExecution(result: JsonObject, tool: String, arguments: JsonObject): ToolExecution {
     let ok = jsonField(result, "ok", fallback: "false") == "true"
     let summary = jsonField(result, "summary")
     let data = extractStructuredData(result)
-    return ToolExecution(tool, ok, summary, shortPreview(data.toString(), maxLines: MAX_TRANSCRIPT_LINES))
+    return ToolExecution(tool, arguments, ok, summary, shortPreview(data.toString(), maxLines: MAX_TRANSCRIPT_LINES))
 }
 
 func buildFinalPrompt(userPrompt: String, plan: AgentPlan, executions: Array<ToolExecution>): String {

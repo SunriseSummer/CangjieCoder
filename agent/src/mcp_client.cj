@@ -86,14 +86,26 @@ class ServiceClient {
         return parseJsonObject(jsonField(result, "structuredContent", fallback: "{}"))
     }
 
-    public func conversationReply(prompt: String): String {
+    public func startConversationSession(): String {
+        let result = callTool("conversation.start_session", JsonObject())
+        let data = extractStructuredData(result)
+        return jsonField(data, "sessionId")
+    }
+
+    public func conversationTurn(prompt: String, sessionId!: String = "", analyzePath!: String = ""): ModelTurn {
         let args = JsonObject()
         args.put("provider", JsonString(config.provider))
         args.put("model", JsonString(config.model))
         args.put("prompt", JsonString(prompt))
+        if (!sessionId.trimAscii().isEmpty()) {
+            args.put("sessionId", JsonString(sessionId))
+        }
+        if (!analyzePath.trimAscii().isEmpty()) {
+            args.put("analyzePath", JsonString(analyzePath))
+        }
         let result = callTool("conversation.chat", args)
         let data = extractStructuredData(result)
-        return jsonField(data, "reply")
+        return ModelTurn(jsonField(data, "reply"), jsonField(data, "sessionId"), jsonField(data, "success") == "true")
     }
 
     private func invokeMcp(request: String): JsonObject {

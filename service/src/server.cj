@@ -228,7 +228,9 @@ func mcpToolCallResultJson(content: String): String {
 }
 
 func providerReplySucceeded(reply: String): Bool {
-    return !reply.startsWith("Missing API key:") && !reply.startsWith("Unknown provider:")
+    return !reply.startsWith("Missing API key:") &&
+        !reply.startsWith("Unsupported provider:") &&
+        !reply.startsWith("Provider request failed:")
 }
 
 func astEditSucceeded(message: String): Bool {

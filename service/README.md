@@ -24,9 +24,16 @@ export CANGJIE_SDK_HOME=/path/to/cangjie-sdk
 source "${CANGJIE_SDK_HOME}/envsetup.sh"
 export STDX_PATH=/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx
 export KIMI_API_KEY=your_kimi_api_key
+export OPENROUTER_API_KEY=your_openrouter_api_key
 ```
 
 默认 Kimi 模型已调整为 **`kimi-k2.5`**。
+
+目前内置 provider：
+
+- `kimi`
+- `glm`
+- `openrouter`（可配合 `openrouter/free` 或具体 `:free` 模型实验）
 
 ## 构建与测试
 
