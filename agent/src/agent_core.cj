@@ -100,18 +100,19 @@ func parseConfig(args: Array<String>): AgentConfig {
         return AgentConfig(cwd, defaultServiceDir, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MAX_ROUNDS, "")
     }
 
-    let workspaceRoot = canonicalize(options.get("workspace") ?? cwd).toString()
-    let serviceDirOption = (options.get("service-dir") ?? "").trimAscii()
+    // Full 选项通过 --long 或 -s 设置的 key 不同，需同时检查长短名
+    let workspaceRoot = canonicalize(options.get("workspace") ?? options.get("w") ?? cwd).toString()
+    let serviceDirOption = (options.get("service-dir") ?? options.get("s") ?? "").trimAscii()
     let serviceDir = if (serviceDirOption.isEmpty()) {
         resolveDefaultServiceDir(workspaceRoot)
     } else {
         canonicalize(serviceDirOption).toString()
     }
     let provider = options.get("provider") ?? DEFAULT_PROVIDER
-    let model = options.get("model") ?? DEFAULT_MODEL
+    let model = options.get("model") ?? options.get("m") ?? DEFAULT_MODEL
 
     var maxRounds = DEFAULT_MAX_ROUNDS
-    let maxRoundsStr = (options.get("max-rounds") ?? "").trimAscii()
+    let maxRoundsStr = (options.get("max-rounds") ?? options.get("n") ?? "").trimAscii()
     if (!maxRoundsStr.isEmpty()) {
         try {
             maxRounds = Int64.parse(maxRoundsStr)
@@ -123,7 +124,7 @@ func parseConfig(args: Array<String>): AgentConfig {
     // --prompt 的值与剩余非选项参数合并为完整提示词，
     // 兼容不加引号的多词输入如 --prompt 请 创建 JsonParser 示例项目
     let promptParts = ArrayList<String>()
-    let promptOption = (options.get("prompt") ?? "").trimAscii()
+    let promptOption = (options.get("prompt") ?? options.get("p") ?? "").trimAscii()
     if (!promptOption.isEmpty()) {
         promptParts.add(promptOption)
     }

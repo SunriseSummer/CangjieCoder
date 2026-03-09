@@ -51,6 +51,43 @@ class AgentHelpersTest {
     }
 
     @TestCase
+    func parseConfigReturnsEmptyPromptForHelpFlag() {
+        let config = parseConfig(["--help"])
+        @Expect(config.prompt.trimAscii().isEmpty())
+    }
+
+    @TestCase
+    func parseConfigHandlesShortOptionFlags() {
+        let config = parseConfig([
+            "-w",
+            "/home/runner/work/CangjieCoder/CangjieCoder",
+            "-n",
+            "5",
+            "-p",
+            "请分析代码"
+        ])
+        @Expect(config.maxRounds, 5)
+        @Expect(config.prompt, "请分析代码")
+    }
+
+    @TestCase
+    func parseConfigUsesNonOptionsAsPromptWithoutFlag() {
+        let config = parseConfig([
+            "--workspace",
+            "/home/runner/work/CangjieCoder/CangjieCoder",
+            "--",
+            "请创建示例项目"
+        ])
+        @Expect(config.prompt, "请创建示例项目")
+    }
+
+    @TestCase
+    func parseConfigFallsBackOnInvalidArgs() {
+        let config = parseConfig(["--max-rounds"])
+        @Expect(config.prompt.trimAscii().isEmpty())
+    }
+
+    @TestCase
     func extractTargetPathFromPromptStopsAtChinesePunctuation() {
         let path = extractTargetPathFromPrompt("请创建示例项目到 target/agent-e2e-demo，并执行测试")
         @Expect(path, "target/agent-e2e-demo")

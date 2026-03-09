@@ -46,12 +46,13 @@ func printUsage(): Unit {
 }
 
 // 基于 std.argopt 解析结果构造 AppConfig
+// Full 选项使用 --long 或 -s 形式时 key 不同，需同时检查长短名
 func buildAppConfig(options: HashMap<String, String>): AppConfig {
     let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
-    let workspaceRoot = canonicalize(options.get("repo") ?? serviceRoot).toString()
+    let workspaceRoot = canonicalize(options.get("repo") ?? options.get("r") ?? serviceRoot).toString()
     let host = options.get("host") ?? "127.0.0.1"
     var port: UInt16 = 8080
-    let portStr = (options.get("port") ?? "").trimAscii()
+    let portStr = (options.get("port") ?? options.get("p") ?? "").trimAscii()
     if (!portStr.isEmpty()) {
         try {
             port = UInt16.parse(portStr)
