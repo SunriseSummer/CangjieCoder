@@ -2,6 +2,7 @@ package cangjiecoder
 
 import std.env.*
 import std.fs.*
+import cangjiecoder.lsp.*
 
 @Test
 class ServerMcpTest {

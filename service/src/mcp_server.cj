@@ -4,6 +4,7 @@ import std.collection.*
 import std.convert.*
 import std.env.*
 import stdx.encoding.json.*
+import cangjiecoder.lsp.*
 
 // MCP 工具上下文 —— 每次 tools/call 携带的运行时环境
 struct McpToolContext {

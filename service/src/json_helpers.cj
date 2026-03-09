@@ -3,6 +3,7 @@ package cangjiecoder
 import std.collection.*
 import std.convert.*
 import stdx.encoding.json.*
+import cangjiecoder.lsp.*
 
 // 安全地从 JsonObject 中读取 String 值，统一处理 JsString 与其他类型
 func jsonField(obj: JsonObject, key: String, fallback!: String = ""): String {

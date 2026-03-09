@@ -1,12 +1,39 @@
-package cangjiecoder
+// LSP 查询层：高层查询接口、冷启动回退、探测
+package cangjiecoder.lsp
 
 import std.collection.*
 import std.fs.*
 import std.process.*
 import stdx.encoding.json.*
 
+// 构造 LSP initialize 请求的参数对象
+public func buildLspInitializeParams(repoRoot!: ?String = None): JsonObject {
+    let params = JsonObject()
+    params.put("processId", JsonNull())
+    let clientInfo = JsonObject()
+    clientInfo.put("name", JsonString("CangjieCoder"))
+    clientInfo.put("version", JsonString(LSP_APP_VERSION))
+    params.put("clientInfo", clientInfo)
+
+    match (repoRoot) {
+        case Some(root) =>
+            params.put("rootUri", JsonString(fileUri(root)))
+            let workspaceFolder = JsonObject()
+            workspaceFolder.put("uri", JsonString(fileUri(root)))
+            workspaceFolder.put("name", JsonString(Path(root).fileName))
+            let workspaceFolders = JsonArray()
+            workspaceFolders.add(workspaceFolder)
+            params.put("workspaceFolders", workspaceFolders)
+        case None =>
+            params.put("rootUri", JsonNull())
+    }
+
+    params.put("capabilities", JsonObject())
+    return params
+}
+
 // 将多个 LSP JSON-RPC 消息编码成帧序列，写入进程 stdin 后读取全部 stdout/stderr
-func runLspSession(command: String, repoRoot: String, messages: Array<String>): (Array<String>, String) {
+public func runLspSession(command: String, repoRoot: String, messages: Array<String>): (Array<String>, String) {
     let process = launch(command,
         [],
         workingDirectory: Path(repoRoot),
@@ -25,9 +52,8 @@ func runLspSession(command: String, repoRoot: String, messages: Array<String>): 
     return (extractLspBodies(stdout), stderr)
 }
 
-// 冷启动 LSP 请求：每次查询启动新进程，发送 initialize/request/shutdown 后退出。
-// 作为持久化会话失败时的兜底方案保留。
-func runLspRequestColdStart(repoRoot: String,
+// 冷启动 LSP 请求：每次查询启动新进程，持久化会话失败时的兜底方案
+public func runLspRequestColdStart(repoRoot: String,
                    method: String,
                    params: JsonValue,
                    setupNotifications!: Array<String> = []): LspQueryResult {
@@ -62,18 +88,18 @@ func runLspRequestColdStart(repoRoot: String,
                 }
                 return LspQueryResult(true, false, command, method,
                     "LSP request produced no parseable response for the requested method.",
-                    shortPreview(fallbackPreview, maxLines: 12), JSON_NULL_LITERAL)
+                    lspShortPreview(fallbackPreview, maxLines: 12), JSON_NULL_LITERAL)
         }
     } catch (e: Exception) {
         return LspQueryResult(true, false, command, method,
             "LSP request failed.",
-            shortPreview(e.toString(), maxLines: 12), JSON_NULL_LITERAL)
+            lspShortPreview(e.toString(), maxLines: 12), JSON_NULL_LITERAL)
     }
 }
 
 // LSP 请求入口：优先通过长驻会话查询以避免冷启动开销，
 // 持久化会话失败时自动回退到冷启动模式保证可用性。
-func runLspRequest(repoRoot: String,
+public func runLspRequest(repoRoot: String,
                    method: String,
                    params: JsonValue,
                    setupNotifications!: Array<String> = []): LspQueryResult {
@@ -81,12 +107,11 @@ func runLspRequest(repoRoot: String,
     if (persistentResult.success) {
         return persistentResult
     }
-    // 持久化会话失败，回退到冷启动
     return runLspRequestColdStart(repoRoot, method, params, setupNotifications: setupNotifications)
 }
 
-func queryLspDocumentSymbols(repoRoot: String, path: String): LspQueryResult {
-    let fullPath = ensureWorkspacePath(repoRoot, path)
+public func queryLspDocumentSymbols(repoRoot: String, path: String): LspQueryResult {
+    let fullPath = lspEnsureWorkspacePath(repoRoot, path)
     let params = JsonObject()
     let textDocument = JsonObject()
     textDocument.put("uri", JsonString(fileUri(fullPath)))
@@ -97,14 +122,14 @@ func queryLspDocumentSymbols(repoRoot: String, path: String): LspQueryResult {
         setupNotifications: [buildDidOpenNotification(fullPath)])
 }
 
-func queryLspWorkspaceSymbols(repoRoot: String, query: String): LspQueryResult {
+public func queryLspWorkspaceSymbols(repoRoot: String, query: String): LspQueryResult {
     let params = JsonObject()
     params.put("query", JsonString(query))
     return runLspRequest(repoRoot, "workspace/symbol", params)
 }
 
-func queryLspDefinition(repoRoot: String, path: String, line: Int64, column: Int64): LspQueryResult {
-    let fullPath = ensureWorkspacePath(repoRoot, path)
+public func queryLspDefinition(repoRoot: String, path: String, line: Int64, column: Int64): LspQueryResult {
+    let fullPath = lspEnsureWorkspacePath(repoRoot, path)
     return runLspRequest(repoRoot,
         "textDocument/definition",
         buildTextDocumentPositionParams(fullPath, line, column),
@@ -128,7 +153,7 @@ func findSuccessfulProbeResponse(bodies: Array<String>): ?String {
 }
 
 // LSP 探测：仅执行 initialize → shutdown 以验证 LSP 二进制是否可启动
-func probeLspServer(repoRoot: String): LspProbeResult {
+public func probeLspServer(repoRoot: String): LspProbeResult {
     let command = match (resolveLspCommand(repoRoot)) {
         case Some(cmd) => cmd
         case None =>
@@ -146,19 +171,60 @@ func probeLspServer(repoRoot: String): LspProbeResult {
         match (findSuccessfulProbeResponse(bodies)) {
             case Some(body) =>
                 return LspProbeResult(true, true, command,
-                    "LSP initialize probe succeeded.", shortPreview(body, maxLines: 12))
+                    "LSP initialize probe succeeded.", lspShortPreview(body, maxLines: 12))
             case None => ()
         }
         if (!bodies.isEmpty()) {
             return LspProbeResult(true, false, command,
                 "LSP probe returned JSON-RPC responses, but initialize did not succeed cleanly.",
-                shortPreview(bodies[0], maxLines: 12))
+                lspShortPreview(bodies[0], maxLines: 12))
         }
         return LspProbeResult(true, false, command,
             "LSP probe produced no parseable JSON-RPC response.",
-            shortPreview(stderr, maxLines: 12))
+            lspShortPreview(stderr, maxLines: 12))
     } catch (e: Exception) {
         return LspProbeResult(true, false, command,
-            "LSP probe failed.", shortPreview(e.toString(), maxLines: 12))
+            "LSP probe failed.", lspShortPreview(e.toString(), maxLines: 12))
     }
+}
+
+public func buildDidOpenNotification(path: String): String {
+    let textDocument = JsonObject()
+    textDocument.put("uri", JsonString(fileUri(path)))
+    textDocument.put("languageId", JsonString("cangjie"))
+    textDocument.put("version", JsonInt(1))
+    textDocument.put("text", JsonString(lspReadTextFile(path)))
+    let params = JsonObject()
+    params.put("textDocument", textDocument)
+    return buildLspNotification("textDocument/didOpen", params)
+}
+
+public func buildTextDocumentPositionParams(fullPath: String, line: Int64, column: Int64): JsonObject {
+    let textDocument = JsonObject()
+    textDocument.put("uri", JsonString(fileUri(fullPath)))
+    let position = JsonObject()
+    position.put("line", JsonInt(line))
+    position.put("character", JsonInt(column))
+    let params = JsonObject()
+    params.put("textDocument", textDocument)
+    params.put("position", position)
+    return params
+}
+
+// 子包内部的文件读取和路径解析（避免对根包的循环依赖）
+func lspReadTextFile(path: String): String {
+    return String.fromUtf8(File.readFrom(path))
+}
+
+func lspEnsureWorkspacePath(repoRoot: String, path: String): String {
+    let canonicalRoot = canonicalize(repoRoot).toString()
+    let fullPath = if (path.startsWith("/")) { path } else { "${repoRoot}/${path}" }
+    if (!exists(fullPath)) {
+        throw IllegalArgumentException("Path does not exist: ${path}")
+    }
+    let canonicalPath = canonicalize(fullPath).toString()
+    if (!canonicalPath.startsWith(canonicalRoot)) {
+        throw IllegalArgumentException("Path escapes repository root: ${path}")
+    }
+    return canonicalPath
 }

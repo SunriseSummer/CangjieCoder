@@ -3,6 +3,7 @@ package cangjiecoder
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
+import cangjiecoder.lsp.*
 
 // 启动 HTTP API 服务，注册所有工作区/LSP/MCP 路由
 func startServer(config: AppConfig): Unit {

@@ -1,4 +1,5 @@
-package cangjiecoder
+// LSP 会话管理：命令发现、持久化连接、帧读写
+package cangjiecoder.lsp
 
 import std.collection.*
 import std.convert.*
@@ -9,12 +10,10 @@ import std.process.*
 import stdx.encoding.json.*
 
 // 缓存已解析的 LSP 命令路径，避免每次查询都重复探测文件系统和 PATH。
-// 使用 (repoRoot, command) 对存储，不同工作区可能对应不同的 LSP 二进制。
 var lspCommandCache = HashMap<String, String>()
 
 // 按优先级尝试发现可用的 LSP 命令：缓存 → 环境变量 → SDK 自带 → PATH 搜索
-func resolveLspCommand(repoRoot: String): ?String {
-    // 先检查缓存，避免重复的文件系统探测和子进程调用
+public func resolveLspCommand(repoRoot: String): ?String {
     match (lspCommandCache.get(repoRoot)) {
         case Some(cached) => return cached
         case None => ()
@@ -35,7 +34,7 @@ func resolveLspCommand(repoRoot: String): ?String {
         }
     }
 
-    let (ok, stdout, _) = runCommandWithCapturedOutput("bash", ["-lc", "command -v LSPServer"], repoRoot)
+    let (ok, stdout, _) = lspRunCommand("bash", ["-lc", "command -v LSPServer"], repoRoot)
     if (ok) {
         let resolved = stdout.trimAscii()
         if (!resolved.isEmpty()) {
@@ -47,11 +46,11 @@ func resolveLspCommand(repoRoot: String): ?String {
 }
 
 // 清除 LSP 命令缓存，在环境变量变更或测试场景下使用
-func clearLspCommandCache(): Unit {
+public func clearLspCommandCache(): Unit {
     lspCommandCache = HashMap<String, String>()
 }
 
-func inspectLspStatus(repoRoot: String): LspStatus {
+public func inspectLspStatus(repoRoot: String): LspStatus {
     match (resolveLspCommand(repoRoot)) {
         case Some(command) =>
             return LspStatus(
@@ -72,8 +71,7 @@ func inspectLspStatus(repoRoot: String): LspStatus {
 
 // 从输入流中逐字节读取一个 LSP Content-Length 帧。
 // 先逐字节读取头部直到 \r\n\r\n 分隔符，解析 Content-Length 后精确读取 body。
-// 用于持久化 LSP 会话中从子进程 stdout 读取单个响应。
-func readLspFrameFromStream(input: InputStream): ?String {
+public func readLspFrameFromStream(input: InputStream): ?String {
     let headerBytes = ArrayList<Byte>()
     while (true) {
         let buf = Array<Byte>(1, repeat: 0)
@@ -132,14 +130,13 @@ func readLspFrameFromStream(input: InputStream): ?String {
 // LspSessionManager 维护一个长驻 LSP 子进程，
 // 首次查询时执行 initialize 握手，后续查询复用已初始化的进程，
 // 避免每次都冷启动 LSP Server 带来的高延迟和 CPU 消耗。
-class LspSessionManager {
+public class LspSessionManager {
     var process: ?SubProcess = None
     var command: String = ""
     var repoRoot: String = ""
     var initialized: Bool = false
     var nextRequestId: Int64 = 10
 
-    // 向子进程 stdin 写入一个 LSP 帧
     func sendFrame(message: String): Unit {
         match (process) {
             case Some(proc) =>
@@ -150,7 +147,6 @@ class LspSessionManager {
         }
     }
 
-    // 从子进程 stdout 读取一个 LSP 帧
     func receiveFrame(): ?String {
         match (process) {
             case Some(proc) => return readLspFrameFromStream(proc.stdOutPipe)
@@ -158,7 +154,6 @@ class LspSessionManager {
         }
     }
 
-    // 检查收到的帧是否为指定 id 的 JSON-RPC 响应
     func isResponseWithId(frame: String, targetId: Int64): Bool {
         try {
             let obj = JsonValue.fromStr(frame).asObject()
@@ -171,7 +166,6 @@ class LspSessionManager {
         }
     }
 
-    // 启动 LSP 子进程并完成 initialize 握手
     func ensureInitialized(targetRepoRoot: String): Bool {
         if (initialized && repoRoot == targetRepoRoot) {
             return true
@@ -258,7 +252,7 @@ class LspSessionManager {
             initialized = false
             return LspQueryResult(true, false, command, method,
                 "LSP persistent session failed.",
-                shortPreview(e.toString(), maxLines: 12), JSON_NULL_LITERAL)
+                lspShortPreview(e.toString(), maxLines: 12), JSON_NULL_LITERAL)
         }
     }
 
@@ -284,9 +278,23 @@ class LspSessionManager {
 }
 
 // 全局 LSP 会话管理器，被所有 LSP 查询复用
-var globalLspSession = LspSessionManager()
+public var globalLspSession = LspSessionManager()
 
 // 关闭全局 LSP 会话
-func closeLspSession(): Unit {
+public func closeLspSession(): Unit {
     globalLspSession.close()
+}
+
+// 子包内部使用的命令执行（避免对根包的循环依赖）
+func lspRunCommand(command: String, arguments: Array<String>, workingDirectory: String): (Bool, String, String) {
+    try {
+        let (status, stdoutBytes, stderrBytes) = launch(command, arguments,
+            workingDirectory: Path(workingDirectory),
+            stdIn: ProcessRedirect.Pipe,
+            stdOut: ProcessRedirect.Pipe,
+            stdErr: ProcessRedirect.Pipe).waitOutput()
+        return (status == 0, String.fromUtf8(stdoutBytes), String.fromUtf8(stderrBytes))
+    } catch (e: Exception) {
+        return (false, "", e.toString())
+    }
 }
