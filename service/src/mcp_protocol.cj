@@ -37,6 +37,11 @@ func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("oldText", "string", "Exact text to replace.", true),
             ToolArgSpec("newText", "string", "Replacement text.", true)
         ]),
+        ToolDefinition("workspace.create_file", "Create a new file inside the repository root and create missing parent directories when needed.", [
+            ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
+            ToolArgSpec("content", "string", "Initial file content. Defaults to an empty file when omitted.", false),
+            ToolArgSpec("overwrite", "boolean", "When true, allow overwriting an existing file. Defaults to false.", false)
+        ]),
         ToolDefinition("workspace.run_build", "Run cjpm build inside the workspace or a subdirectory.", [
             ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
         ]),
@@ -55,19 +60,19 @@ func buildToolDefinitions(): Array<ToolDefinition> {
         ToolDefinition("project.bootstrap_json_parser", "Copy the built-in JsonParser example project into a target workspace path.", [
             ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
         ]),
-        ToolDefinition("conversation.start_session", "Create a new in-memory multi-turn conversation session.", []),
-        ToolDefinition("conversation.get_history", "Read recent conversation turns for a session.", [
-            ToolArgSpec("sessionId", "string", "Existing session id.", true)
-        ]),
-        ToolDefinition("conversation.chat", "Run provider chat with session memory and optional analysis context.", [
-            ToolArgSpec("sessionId", "string", "Existing session id, or omit to create one.", false),
-            ToolArgSpec("provider", "string", "Provider name such as kimi, glm, or openrouter.", false),
-            ToolArgSpec("model", "string", "Provider model override.", false),
-            ToolArgSpec("prompt", "string", "User prompt.", true),
-            ToolArgSpec("analyzePath", "string", "Optional source path for analyzer context.", false)
-        ]),
         ToolDefinition("cangjie.lsp_status", "Inspect whether a Cangjie LSP binary is configured or discoverable.", []),
         ToolDefinition("cangjie.lsp_probe", "Run a lightweight initialize/shutdown probe against the configured Cangjie LSP server.", []),
+        ToolDefinition("cangjie.lsp_document_symbols", "Query the configured Cangjie LSP server for document symbols in a source file.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true)
+        ]),
+        ToolDefinition("cangjie.lsp_workspace_symbols", "Query the configured Cangjie LSP server for workspace-level symbol matches.", [
+            ToolArgSpec("query", "string", "Symbol name or fuzzy symbol query. Empty string requests a broad symbol scan.", false)
+        ]),
+        ToolDefinition("cangjie.lsp_definition", "Resolve a symbol definition via the configured Cangjie LSP server.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true),
+            ToolArgSpec("line", "integer", "Zero-based source line.", true),
+            ToolArgSpec("column", "integer", "Zero-based source column.", true)
+        ]),
         ToolDefinition("cangjie.edit_ast_node", "Replace the selected AST node using tree-sitter parse ranges.", [
             ToolArgSpec("path", "string", "Cangjie source file path.", true),
             ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),

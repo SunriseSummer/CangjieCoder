@@ -50,7 +50,6 @@ cjpm run --run-args "serve --repo /absolute/path/to/project --host 127.0.0.1 --p
 主要包括：
 
 - `/health`
-- `/providers`
 - `/projects/examples`
 - `/bootstrap/json-parser`
 - `/skills`
@@ -58,10 +57,9 @@ cjpm run --run-args "serve --repo /absolute/path/to/project --host 127.0.0.1 --p
 - `/analyze`
 - `/lsp/status`
 - `/lsp/probe`
-- `/conversations/start`
-- `/conversations/history`
+- `/lsp/document-symbols`
+- `/lsp/workspace-symbols`
 - `/ast/edit`
-- `/chat`
 
 这些接口适合：
 
@@ -87,15 +85,16 @@ cjpm run --run-args "serve --repo /absolute/path/to/project --host 127.0.0.1 --p
 
 - `skills.search`
 - `workspace.read_file`
+- `workspace.create_file`
 - `workspace.replace_text`
 - `cangjie.analyze_file`
 - `project.list_examples`
 - `project.bootstrap_json_parser`
-- `conversation.start_session`
-- `conversation.get_history`
-- `conversation.chat`
 - `cangjie.lsp_status`
 - `cangjie.lsp_probe`
+- `cangjie.lsp_document_symbols`
+- `cangjie.lsp_workspace_symbols`
+- `cangjie.lsp_definition`
 - `cangjie.edit_ast_node`
 
 并且 `tools/list` 已经返回 `inputSchema`，所以从“协议描述能力”上，它已经比最早那版更接近可被 AI 宿主自动发现和调用的工具服务。
@@ -124,25 +123,31 @@ curl -X POST http://127.0.0.1:8080/analyze \
   -d '{"path":"src/main.cj"}'
 ```
 
-### 发起带会话记忆的聊天
+### 查询文档级 LSP 符号
 
 ```bash
-curl -X POST http://127.0.0.1:8080/chat \
+curl -X POST http://127.0.0.1:8080/lsp/document-symbols \
   -H 'content-type: application/json' \
-  -d '{
-    "sessionId":"demo-session",
-    "provider":"kimi",
-    "prompt":"请分析这个仓颉项目结构并给出下一步建议"
-  }'
+  -d '{"path":"src/main.cj"}'
 ```
 
-### 查看会话历史
+### 查询工作区级 LSP 符号
 
 ```bash
-curl -X POST http://127.0.0.1:8080/conversations/history \
+curl -X POST http://127.0.0.1:8080/lsp/workspace-symbols \
   -H 'content-type: application/json' \
-  -d '{"sessionId":"demo-session"}'
+  -d '{"query":"JsonParser"}'
 ```
+
+### 查询定义跳转
+
+```bash
+curl -X POST http://127.0.0.1:8080/lsp/definition \
+  -H 'content-type: application/json' \
+  -d '{"path":"src/main.cj","line":10,"column":4}'
+```
+
+> 注：AI Provider / 会话记忆能力已经迁移到 `agent/`，`service/` 当前只负责工具服务与 LSP / AST / 构建能力。
 
 ### 做一次 AST 节点级替换
 

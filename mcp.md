@@ -8,7 +8,6 @@
 export CANGJIE_SDK_HOME=/path/to/cangjie-sdk
 source "${CANGJIE_SDK_HOME}/envsetup.sh"
 export STDX_PATH=/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx
-export KIMI_API_KEY=your_kimi_api_key
 ```
 
 建议先构建一遍 `service`：
@@ -51,19 +50,10 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
       ],
       "env": {
         "CANGJIE_SDK_HOME": "/path/to/cangjie-sdk",
-        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx",
-        "KIMI_API_KEY": "${input:KIMI_API_KEY}"
+        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx"
       }
     }
-  },
-  "inputs": [
-    {
-      "type": "promptString",
-      "id": "KIMI_API_KEY",
-      "description": "Moonshot Kimi API Key",
-      "password": true
-    }
-  ]
+  }
 }
 ```
 
@@ -83,8 +73,7 @@ Cursor 常用 `~/.cursor/mcp.json` 或项目内 `.cursor/mcp.json`：
       ],
       "env": {
         "CANGJIE_SDK_HOME": "/path/to/cangjie-sdk",
-        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx",
-        "KIMI_API_KEY": "your_kimi_api_key"
+        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx"
       }
     }
   }
@@ -109,8 +98,7 @@ OpenCode 的本地 MCP 示例可写成：
       "enabled": true,
       "env": {
         "CANGJIE_SDK_HOME": "/path/to/cangjie-sdk",
-        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx",
-        "KIMI_API_KEY": "your_kimi_api_key"
+        "STDX_PATH": "/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx"
       }
     }
   }
@@ -121,7 +109,7 @@ OpenCode 的本地 MCP 示例可写成：
 
 - 先在终端手工运行 `service` 的 `mcp-stdio`，确认可以正常启动
 - 优先使用绝对路径
-- 模型密钥只通过环境变量或 MCP 客户端密钥输入能力注入，不要写入仓库
+- 模型密钥只需要配置给 `agent`，不要配置到 `service` 或写入仓库
 - 如果需要更强的仓颉分析能力，可同时配置：
 
 ```bash

@@ -121,7 +121,8 @@ func runAgent(config: AgentConfig): Int64 {
     let client = ServiceClient(config)
     let toolsJson = client.listToolsJson()
     let allowedTools = allowedToolNames(toolsJson)
-    let sessionId = client.startConversationSession()
+    let conversations = ConversationStore()
+    let sessionId = conversations.createSession().sessionId
 
     let executions = ArrayList<ToolExecution>()
     let plans = ArrayList<AgentPlan>()
@@ -133,9 +134,19 @@ func runAgent(config: AgentConfig): Int64 {
          */
         let context = planningContext(client, config, toolsJson)
         let planTurn = if (round == 0) {
-            client.conversationTurn(buildPlanPrompt(context), sessionId: sessionId)
+            conversationTurn(conversations,
+                config.provider,
+                config.model,
+                planningSystemPrompt(),
+                buildPlanPrompt(context),
+                sessionId)
         } else {
-            client.conversationTurn(buildReplanPrompt(config.prompt, plans.toArray(), executions.toArray(), context), sessionId: sessionId)
+            conversationTurn(conversations,
+                config.provider,
+                config.model,
+                planningSystemPrompt(),
+                buildReplanPrompt(config.prompt, plans.toArray(), executions.toArray(), context),
+                sessionId)
         }
         let plan = parsePlan(planTurn.reply, context)
         plans.add(plan)
@@ -170,7 +181,12 @@ func runAgent(config: AgentConfig): Int64 {
     }
 
     let finalPlan = AgentPlan(mergedPlanSummary(plans.toArray()), [])
-    let remoteFinalTurn = client.conversationTurn(buildFinalPrompt(config.prompt, finalPlan, executions.toArray()), sessionId: sessionId)
+    let remoteFinalTurn = conversationTurn(conversations,
+        config.provider,
+        config.model,
+        reportingSystemPrompt(),
+        buildFinalPrompt(config.prompt, finalPlan, executions.toArray()),
+        sessionId)
     // provider 不可用时退化到本地摘要，避免“工具执行成功但最后一句话没生成”
     // 这种体验断裂，保证用户始终能拿到确定性的最终结果。
     let finalReply = if (!remoteFinalTurn.success ||

@@ -6,7 +6,10 @@ import stdx.encoding.json.*
 func isMutatingTool(tool: String): Bool {
     // 这里集中维护“会改变工作区状态”的工具集合，
     // runner 与自动补充验证步骤都依赖这个判定。
-    return tool == "workspace.replace_text" || tool == "cangjie.edit_ast_node" || tool == "project.bootstrap_json_parser"
+    return tool == "workspace.replace_text" ||
+        tool == "workspace.create_file" ||
+        tool == "cangjie.edit_ast_node" ||
+        tool == "project.bootstrap_json_parser"
 }
 
 func appendValidationSteps(steps: Array<PlannedToolCall>, allowedTools!: Array<String> = ["workspace.run_build", "workspace.run_test"]): Array<PlannedToolCall> {

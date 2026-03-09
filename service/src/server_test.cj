@@ -1,6 +1,7 @@
 package cangjiecoder
 
 import std.env.*
+import std.fs.*
 
 @Test
 class ServerMcpTest {
@@ -26,6 +27,10 @@ class ServerMcpTest {
                 @Expect(payload.contains("workspace.list_files"))
                 @Expect(payload.contains("workspace.search_text"))
                 @Expect(payload.contains("workspace.run_command"))
+                @Expect(payload.contains("workspace.create_file"))
+                @Expect(payload.contains("cangjie.lsp_document_symbols"))
+                @Expect(payload.contains("cangjie.lsp_workspace_symbols"))
+                @Expect(payload.contains("cangjie.lsp_definition"))
             case None =>
                 @Expect(false)
         }
@@ -63,7 +68,7 @@ class ServerMcpTest {
         let ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
         let toolsList = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
         let payload = "${encodeMcpFrame(ping)}${encodeMcpFrame(toolsList)}"
-        let bodies = extractMcpBodies(payload)
+        let bodies = extractLspBodies(payload)
         @Expect(bodies.size == 2)
         @Expect(bodies[0].contains("\"method\":\"ping\""))
         @Expect(bodies[1].contains("\"method\":\"tools/list\""))
@@ -93,6 +98,44 @@ class ServerMcpTest {
                 @Expect(false)
             case None =>
                 @Expect(true)
+        }
+    }
+
+    @TestCase
+    func runtimeCanCreateNestedWorkspaceFileViaToolsCall() {
+        let workspace = Directory.createTemp(getTempDirectory())
+        try {
+            let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+            let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"nested/demo/generated.cj\",\"content\":\"package demo\\n\\nfunc generated(): Int64 {\\n    1\\n}\\n\"}}}")
+            match (response) {
+                case Some(payload) =>
+                    @Expect(payload.contains("\"ok\":true"))
+                    @Expect(exists("${workspace.toString()}/nested/demo/generated.cj"))
+                case None =>
+                    @Expect(false)
+            }
+        } finally {
+            removeIfExists(workspace.toString(), recursive: true)
+        }
+    }
+
+    @TestCase
+    func runtimeRejectsCreateFileOverwriteByDefault() {
+        let workspace = Directory.createTemp(getTempDirectory())
+        try {
+            let filePath = "${workspace.toString()}/demo.txt"
+            writeTextFile(filePath, "old")
+            let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+            let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"demo.txt\",\"content\":\"new\"}}}")
+            match (response) {
+                case Some(payload) =>
+                    @Expect(payload.contains("\"ok\":false"))
+                    @Expect(readTextFile(filePath), "old")
+                case None =>
+                    @Expect(false)
+            }
+        } finally {
+            removeIfExists(workspace.toString(), recursive: true)
         }
     }
 }

@@ -1,10 +1,8 @@
 package cangjiecoder
 
 import std.collection.*
-import std.convert.*
 import std.fs.*
 import std.process.*
-import std.env.*
 
 const APP_VERSION: String = "0.3.0"
 
@@ -23,48 +21,11 @@ struct SkillRecord {
                        let path: String) {}
 }
 
-struct ProviderSpec {
-    public ProviderSpec(let name: String,
-                        let displayName: String,
-                        let baseUrl: String,
-                        let apiKeyEnv: String,
-                        let defaultModel: String) {}
-}
-
 struct AnalysisResult {
     public AnalysisResult(let engine: String,
                           let success: Bool,
                           let summary: String,
                           let output: String) {}
-}
-
-func parseConfig(args: Array<String>): AppConfig {
-    let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
-    var workspaceRoot = serviceRoot
-    var host = "127.0.0.1"
-    var port: UInt16 = 8080
-    var index = 0
-    while (index < args.size) {
-        let current = args[index]
-        if (current == "--repo") {
-            if (index + 1 < args.size) {
-                workspaceRoot = args[index + 1]
-                index += 1
-            }
-        } else if (current == "--host") {
-            if (index + 1 < args.size) {
-                host = args[index + 1]
-                index += 1
-            }
-        } else if (current == "--port") {
-            if (index + 1 < args.size) {
-                port = UInt16.parse(args[index + 1])
-                index += 1
-            }
-        }
-        index += 1
-    }
-    return AppConfig(canonicalize(workspaceRoot).toString(), serviceRoot, host, port)
 }
 
 func resolveBundledPath(serviceRoot: String, relativePath: String): String {

@@ -24,6 +24,16 @@ class AgentHelpersTest {
     }
 
     @TestCase
+    func appendValidationStepsTreatsCreateFileAsMutation() {
+        let args = JsonObject()
+        args.put("path", JsonString("src/generated_helper.cj"))
+        let steps = appendValidationSteps([PlannedToolCall("workspace.create_file", args, "create helper")], allowedTools: ["workspace.create_file", "workspace.run_build", "workspace.run_test"])
+        @Expect(steps.size == 3)
+        @Expect(steps[1].tool, "workspace.run_build")
+        @Expect(steps[2].tool, "workspace.run_test")
+    }
+
+    @TestCase
     func parseConfigKeepsWholePromptTail() {
         let config = parseConfig([
             "--workspace",
@@ -38,6 +48,43 @@ class AgentHelpersTest {
         ])
         @Expect(config.prompt, "请 创建 JsonParser 示例项目")
         @Expect(config.maxRounds, 3)
+    }
+
+    @TestCase
+    func parseConfigReturnsEmptyPromptForHelpFlag() {
+        let config = parseConfig(["--help"])
+        @Expect(config.prompt.trimAscii().isEmpty())
+    }
+
+    @TestCase
+    func parseConfigHandlesShortOptionFlags() {
+        let config = parseConfig([
+            "-w",
+            "/home/runner/work/CangjieCoder/CangjieCoder",
+            "-n",
+            "5",
+            "-p",
+            "请分析代码"
+        ])
+        @Expect(config.maxRounds, 5)
+        @Expect(config.prompt, "请分析代码")
+    }
+
+    @TestCase
+    func parseConfigUsesNonOptionsAsPromptWithoutFlag() {
+        let config = parseConfig([
+            "--workspace",
+            "/home/runner/work/CangjieCoder/CangjieCoder",
+            "--",
+            "请创建示例项目"
+        ])
+        @Expect(config.prompt, "请创建示例项目")
+    }
+
+    @TestCase
+    func parseConfigFallsBackOnInvalidArgs() {
+        let config = parseConfig(["--max-rounds"])
+        @Expect(config.prompt.trimAscii().isEmpty())
     }
 
     @TestCase
@@ -63,7 +110,7 @@ class AgentHelpersTest {
     func fallbackPlanReadsWorkspaceContextForAnalysisTasks() {
         let context = AgentPlanningContext(
             "请分析并优化这个仓颉项目",
-            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
+            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.lsp_document_symbols\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
             "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}",
             "{\"ok\":true,\"data\":{\"projects\":[]}}"
         )
@@ -71,7 +118,8 @@ class AgentHelpersTest {
         @Expect(plan.steps.size == 6)
         @Expect(plan.steps[0].tool, "workspace.list_files")
         @Expect(plan.steps[1].tool, "workspace.read_file")
-        @Expect(plan.steps[2].tool, "workspace.read_file")
+        @Expect(jsonField(plan.steps[1].arguments, "path"), "cjpm.toml")
+        @Expect(plan.steps[2].tool, "cangjie.lsp_document_symbols")
         @Expect(plan.steps[3].tool, "cangjie.analyze_file")
         @Expect(plan.steps[4].tool, "workspace.run_build")
         @Expect(plan.steps[5].tool, "workspace.run_test")
