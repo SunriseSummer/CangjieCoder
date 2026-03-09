@@ -6,7 +6,6 @@ import std.convert.*
 import std.env.*
 import std.fs.*
 import cangjiecoder.lsp.*
-import cangjiecoder.mcp.*
 
 // 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {

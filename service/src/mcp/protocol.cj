@@ -1,7 +1,14 @@
-// MCP 协议层：工具定义、参数规格、JSON 序列化
+// MCP 协议层：工具定义、参数规格、JSON 序列化、帧编解码
 package cangjiecoder.mcp
 
+import std.convert.*
+import std.env.*
 import stdx.encoding.json.*
+
+// MCP stdio 帧格式常量
+public const MCP_HEADER_DELIMITER: String = "\r\n\r\n"
+public const MCP_CONTENT_LENGTH_HEADER: String = "Content-Length:"
+public const STDIO_CHUNK_SIZE: Int64 = 4096
 
 public struct ToolArgSpec {
     public ToolArgSpec(public let name: String,
@@ -151,4 +158,56 @@ public func mcpToolCallResultJson(content: String): String {
     result.put("structuredContent", toolResult)
     result.put("isError", JsonBool(isError))
     return result.toString()
+}
+
+// 将 JSON 消息体编码为 MCP Content-Length 帧
+public func encodeMcpFrame(body: String): String {
+    return "${MCP_CONTENT_LENGTH_HEADER} ${body.toArray().size}${MCP_HEADER_DELIMITER}${body}"
+}
+
+// 从标准输入逐字节读取一个 MCP 帧（Content-Length + body）
+public func readStdioFrame(reader: ConsoleReader): ?String {
+    var contentLength: Int64 = -1
+    while (true) {
+        match (reader.readln()) {
+            case Some(line) =>
+                let trimmed = line.trimAscii()
+                if (trimmed.isEmpty()) {
+                    break
+                }
+                if (trimmed.startsWith(MCP_CONTENT_LENGTH_HEADER)) {
+                    let rawLength = trimmed[MCP_CONTENT_LENGTH_HEADER.size..trimmed.size].trimAscii()
+                    try {
+                        contentLength = Int64.parse(rawLength)
+                    } catch (e: Exception) {
+                        return None
+                    }
+                }
+            case None =>
+                return None
+        }
+    }
+
+    if (contentLength < 0) {
+        return None
+    }
+
+    var bodyBytes = Array<Byte>(contentLength, repeat: 0)
+    var offset: Int64 = 0
+    while (offset < contentLength) {
+        let remaining = contentLength - offset
+        let chunkSize = if (remaining > STDIO_CHUNK_SIZE) { STDIO_CHUNK_SIZE } else { remaining }
+        var chunk = Array<Byte>(chunkSize, repeat: 0)
+        let bytesRead = reader.read(chunk)
+        if (bytesRead <= 0) {
+            return None
+        }
+        var index: Int64 = 0
+        while (index < bytesRead) {
+            bodyBytes[offset + index] = chunk[index]
+            index += 1
+        }
+        offset += bytesRead
+    }
+    return String.fromUtf8(bodyBytes)
 }

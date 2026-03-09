@@ -189,14 +189,17 @@ LSP 连接经历了两个阶段：
 
 ### 5.4 MCP 子包（`cangjiecoder.mcp`）
 
-将原 `service/src/mcp_server.cj` 和 `service/src/mcp_protocol.cj` 拆分为 `service/src/mcp/` 子包：
+MCP 模块采用**协议/处理分离**的架构：
 
-| 文件 | 职责 |
-|------|------|
-| `protocol.cj` | ToolArgSpec/ToolDefinition 类型、buildToolDefinitions 工具定义、toolDefinitionsJson 序列化、JSON-RPC 响应构建（jsonRpcResult/jsonRpcError）、mcpToolCallResultJson |
-| `server.cj` | McpToolContext/McpWorkspaceOps/McpToolHandler 类型定义、各工具处理函数（handleReadFile 等）、工具/方法注册表、McpRuntime 请求处理、stdio 帧编解码与 stdio 服务入口 |
+- **`mcp/protocol.cj`**（子包）：仅包含协议层代码 —— ToolArgSpec/ToolDefinition 类型、工具定义列表、JSON-RPC 响应构建、mcpToolCallResultJson、stdio 帧编解码
+- **`mcp_handlers.cj`**（根包）：MCP 工具处理函数、McpRuntime、工具/方法注册表、stdio 服务入口、createMcpRuntime 工厂函数
 
-**桥接模式**：由于仓颉 cjpm 子包不能导入父包，MCP 子包通过 `McpWorkspaceOps` 结构体持有函数引用，由根包 `mcp_bridge.cj` 在创建 `McpRuntime` 时注入闭包实现。这种"函数引用桥接"方式让子包可以调用根包的域函数（`replaceExactText`、`workspaceListFilesJson`、LSP 查询等）而不产生循环依赖。
+| 文件 | 位置 | 职责 |
+|------|------|------|
+| `mcp/protocol.cj` | 子包 | ToolArgSpec/ToolDefinition、buildToolDefinitions、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame/readStdioFrame |
+| `mcp_handlers.cj` | 根包 | McpToolContext、所有 handle* 处理函数、buildMcpToolRegistry/buildMcpMethodRegistry、McpRuntime、startMcpStdioServer、createMcpRuntime |
+
+**设计决策**：处理函数直接调用根包域函数（`replaceExactText`、`workspaceListFilesJson`、LSP 查询等），无需函数引用桥接。协议类型和帧编解码放在子包中保持关注分离，而处理逻辑自然属于根包（它需要所有域函数的直接访问）。
 
 ## 六、文件变更清单
 
@@ -216,9 +219,8 @@ LSP 连接经历了两个阶段：
 | `service/src/lsp/protocol.cj` | 新增 | LSP 协议层（从 lsp.cj 拆出） |
 | `service/src/lsp/session.cj` | 新增 | LSP 会话管理（从 lsp.cj 拆出） |
 | `service/src/lsp/queries.cj` | 新增 | LSP 查询接口（从 lsp.cj 拆出） |
-| `service/src/mcp/protocol.cj` | 新增 | MCP 协议定义（从 mcp_protocol.cj 迁入子包） |
-| `service/src/mcp/server.cj` | 新增 | MCP 工具处理、运行时、stdio 服务（从 mcp_server.cj 迁入子包） |
-| `service/src/mcp_bridge.cj` | 新增 | MCP 子包与根包的函数引用桥接层 |
+| `service/src/mcp/protocol.cj` | 新增 | MCP 协议层 — 工具定义、JSON-RPC 辅助、帧编解码 |
+| `service/src/mcp_handlers.cj` | 新增 | MCP 工具处理、运行时、注册表、stdio 服务、createMcpRuntime |
 | `service/src/json_helpers.cj` | 修改 | 移除已迁入 MCP 子包的 JSON-RPC 辅助函数 |
 | `service/src/workspace_tools.cj` | 修改 | 自动备份集成 |
 | `service/src/skills_test.cj` | 修改 | 备份回滚和 LSP 缓存测试 |
