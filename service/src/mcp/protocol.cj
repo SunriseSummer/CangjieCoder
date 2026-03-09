@@ -1,21 +1,22 @@
-package cangjiecoder
+// MCP 协议层：工具定义、参数规格、JSON 序列化
+package cangjiecoder.mcp
 
 import stdx.encoding.json.*
 
-struct ToolArgSpec {
-    public ToolArgSpec(let name: String,
-                       let kind: String,
-                       let description: String,
-                       let required: Bool) {}
+public struct ToolArgSpec {
+    public ToolArgSpec(public let name: String,
+                       public let kind: String,
+                       public let description: String,
+                       public let required: Bool) {}
 }
 
-struct ToolDefinition {
-    public ToolDefinition(let name: String,
-                          let description: String,
-                          let args: Array<ToolArgSpec>) {}
+public struct ToolDefinition {
+    public ToolDefinition(public let name: String,
+                          public let description: String,
+                          public let args: Array<ToolArgSpec>) {}
 }
 
-func buildToolDefinitions(): Array<ToolDefinition> {
+public func buildToolDefinitions(): Array<ToolDefinition> {
     return [
         ToolDefinition("skills.search", "Search built-in Cangjie skills stored in .github/skills.", [
             ToolArgSpec("query", "string", "Search keywords for skills lookup.", true)
@@ -83,7 +84,7 @@ func buildToolDefinitions(): Array<ToolDefinition> {
     ]
 }
 
-func toolDefinitionsJson(): String {
+public func toolDefinitionsJson(): String {
     let tools = JsonArray()
     for (tool in buildToolDefinitions()) {
         let item = JsonObject()
@@ -111,4 +112,43 @@ func toolDefinitionsJson(): String {
     let root = JsonObject()
     root.put("tools", tools)
     return root.toString()
+}
+
+// JSON-RPC 2.0 成功响应
+public func jsonRpcResult(idJson: String, resultJson: String): String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
+}
+
+// JSON-RPC 2.0 错误响应
+public func jsonRpcError(idJson: String, code: Int64, message: String): String {
+    let error = JsonObject()
+    error.put("code", JsonInt(code))
+    error.put("message", JsonString(message))
+    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"error\":${error.toString()}}"
+}
+
+// 将工具调用结果包装为 MCP content blocks 格式
+public func mcpToolCallResultJson(content: String): String {
+    let toolResult = JsonValue.fromStr(content).asObject()
+    let textBlocks = JsonArray()
+    let textBlock = JsonObject()
+    textBlock.put("type", JsonString("text"))
+    textBlock.put("text", JsonString(content))
+    textBlocks.add(textBlock)
+
+    let isError = match (toolResult.get("ok")) {
+        case Some(value) =>
+            match (value.toString()) {
+                case "true" => false
+                case _ => true
+            }
+        case None =>
+            false
+    }
+
+    let result = JsonObject()
+    result.put("content", textBlocks)
+    result.put("structuredContent", toolResult)
+    result.put("isError", JsonBool(isError))
+    return result.toString()
 }

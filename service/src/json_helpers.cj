@@ -160,19 +160,6 @@ func lspQueryJson(result: LspQueryResult): String {
     return root.toString()
 }
 
-// JSON-RPC 2.0 成功响应
-func jsonRpcResult(idJson: String, resultJson: String): String {
-    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
-}
-
-// JSON-RPC 2.0 错误响应
-func jsonRpcError(idJson: String, code: Int64, message: String): String {
-    let error = JsonObject()
-    error.put("code", JsonInt(code))
-    error.put("message", JsonString(message))
-    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"error\":${error.toString()}}"
-}
-
 // 构造标准的 MCP 工具调用结果
 func toolResultJson(ok: Bool, summary: String, data!: JsonValue = JsonObject()): String {
     let root = JsonObject()
@@ -215,28 +202,3 @@ func toolCommandResultJson(command: String,
     return toolResultJson(ok, summary, data: data)
 }
 
-// 将工具调用结果包装为 MCP content blocks 格式
-func mcpToolCallResultJson(content: String): String {
-    let toolResult = JsonValue.fromStr(content).asObject()
-    let textBlocks = JsonArray()
-    let textBlock = JsonObject()
-    textBlock.put("type", JsonString("text"))
-    textBlock.put("text", JsonString(content))
-    textBlocks.add(textBlock)
-
-    let isError = match (toolResult.get("ok")) {
-        case Some(value) =>
-            match (value.toString()) {
-                case "true" => false
-                case _ => true
-            }
-        case None =>
-            false
-    }
-
-    let result = JsonObject()
-    result.put("content", textBlocks)
-    result.put("structuredContent", toolResult)
-    result.put("isError", JsonBool(isError))
-    return result.toString()
-}

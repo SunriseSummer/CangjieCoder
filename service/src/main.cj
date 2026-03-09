@@ -6,6 +6,7 @@ import std.convert.*
 import std.env.*
 import std.fs.*
 import cangjiecoder.lsp.*
+import cangjiecoder.mcp.*
 
 // 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {
@@ -100,7 +101,8 @@ func cmdServe(config: AppConfig, _: Array<String>): Int64 {
 }
 
 func cmdMcpStdio(config: AppConfig, _: Array<String>): Int64 {
-    startMcpStdioServer(config)
+    let runtime = createMcpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
+    startMcpStdioServer(runtime)
     return 0
 }
 
