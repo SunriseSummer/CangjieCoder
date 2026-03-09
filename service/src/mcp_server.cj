@@ -183,7 +183,7 @@ func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
     }
 }
 
-// MCP JSON-RPC 方法处理函数类型
+// MCP JSON-RPC 方法处理函数类型：接收运行时、请求 ID JSON、params 参数，返回 JSON-RPC 响应字符串
 type McpMethodHandler = (McpRuntime, String, JsonObject) -> String
 
 // 各 MCP 协议方法的独立处理函数
