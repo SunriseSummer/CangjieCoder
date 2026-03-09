@@ -138,4 +138,57 @@ class ServerMcpTest {
             removeIfExists(workspace.toString(), recursive: true)
         }
     }
+
+    @TestCase
+    func runtimeRollbackRestoresReplacedText() {
+        let workspace = Directory.createTemp(getTempDirectory())
+        try {
+            let filePath = "${workspace.toString()}/rollback_demo.txt"
+            writeTextFile(filePath, "unique original content")
+            globalBackupStore.clear()
+
+            let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+            // 执行替换
+            let replaceResponse = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.replace_text\",\"arguments\":{\"path\":\"rollback_demo.txt\",\"oldText\":\"unique original\",\"newText\":\"modified\"}}}")
+            match (replaceResponse) {
+                case Some(payload) => @Expect(payload.contains("\"ok\":true"))
+                case None => @Expect(false)
+            }
+            @Expect(readTextFile(filePath).contains("modified"))
+
+            // 执行回滚
+            let rollbackResponse = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.rollback\",\"arguments\":{}}}")
+            match (rollbackResponse) {
+                case Some(payload) =>
+                    @Expect(payload.contains("\"ok\":true"))
+                    @Expect(payload.contains("Rolled back"))
+                case None =>
+                    @Expect(false)
+            }
+            @Expect(readTextFile(filePath), "unique original content")
+        } finally {
+            globalBackupStore.clear()
+            removeIfExists(workspace.toString(), recursive: true)
+        }
+    }
+
+    @TestCase
+    func runtimeRollbackWithNoBackupsReportsEmpty() {
+        globalBackupStore.clear()
+        let runtime = McpRuntime(getWorkingDirectory().toString())
+        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.rollback\",\"arguments\":{}}}")
+        match (response) {
+            case Some(payload) =>
+                @Expect(payload.contains("\"ok\":true"))
+                @Expect(payload.contains("No backups exist"))
+            case None =>
+                @Expect(false)
+        }
+    }
+
+    @TestCase
+    func toolRegistryIncludesRollback() {
+        let registry = buildMcpToolRegistry()
+        @Expect(registry.contains("workspace.rollback"))
+    }
 }
