@@ -37,6 +37,11 @@ func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("oldText", "string", "Exact text to replace.", true),
             ToolArgSpec("newText", "string", "Replacement text.", true)
         ]),
+        ToolDefinition("workspace.create_file", "Create a new file inside the repository root and create missing parent directories when needed.", [
+            ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
+            ToolArgSpec("content", "string", "Initial file content. Defaults to an empty file when omitted.", false),
+            ToolArgSpec("overwrite", "boolean", "When true, allow overwriting an existing file. Defaults to false.", false)
+        ]),
         ToolDefinition("workspace.run_build", "Run cjpm build inside the workspace or a subdirectory.", [
             ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
         ]),
@@ -62,6 +67,11 @@ func buildToolDefinitions(): Array<ToolDefinition> {
         ]),
         ToolDefinition("cangjie.lsp_workspace_symbols", "Query the configured Cangjie LSP server for workspace-level symbol matches.", [
             ToolArgSpec("query", "string", "Symbol name or fuzzy symbol query. Empty string requests a broad symbol scan.", false)
+        ]),
+        ToolDefinition("cangjie.lsp_definition", "Resolve a symbol definition via the configured Cangjie LSP server.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true),
+            ToolArgSpec("line", "integer", "Zero-based source line.", true),
+            ToolArgSpec("column", "integer", "Zero-based source column.", true)
         ]),
         ToolDefinition("cangjie.edit_ast_node", "Replace the selected AST node using tree-sitter parse ranges.", [
             ToolArgSpec("path", "string", "Cangjie source file path.", true),

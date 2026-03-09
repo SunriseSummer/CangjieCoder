@@ -77,4 +77,4 @@ cd agent
 cjpm run --run-args "--workspace /absolute/path/to/workspace --prompt 为当前仓颉项目生成重构计划并执行必要的构建测试"
 ```
 
-默认模型为 **Kimi 2.5**（`kimi-k2.5`）。现在所有 AI Provider、会话记忆与最终总结逻辑都由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含更细粒度的 LSP 符号查询与 AST 编辑能力）。
+默认模型为 **Kimi 2.5**（`kimi-k2.5`）。现在所有 AI Provider、会话记忆与最终总结逻辑都由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含更细粒度的 LSP 符号查询、定义跳转、文件创建与 AST 编辑能力）。

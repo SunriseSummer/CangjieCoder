@@ -1,5 +1,7 @@
 package cangjiecoder
 
+import std.convert.*
+
 func printUsage(): Unit {
     println("CangjieCoder - lightweight AI coding tool for Cangjie projects")
     println("")
@@ -11,10 +13,12 @@ func printUsage(): Unit {
     println("  cangjiecoder examples [--repo WORKSPACE]")
     println("  cangjiecoder bootstrap-json-parser <path> [--repo WORKSPACE]")
     println("  cangjiecoder analyze <path> [--repo PATH]")
+    println("  cangjiecoder create-file <path> [content] [--repo PATH]")
     println("  cangjiecoder lsp-status [--repo PATH]")
     println("  cangjiecoder lsp-probe [--repo PATH]")
     println("  cangjiecoder lsp-document-symbols <path> [--repo PATH]")
     println("  cangjiecoder lsp-workspace-symbols [query] [--repo PATH]")
+    println("  cangjiecoder lsp-definition <path> <line> <column> [--repo PATH]")
     println("")
     println("Environment:")
     println("  --repo                target workspace root; defaults to the service directory")
@@ -79,6 +83,14 @@ main(args: Array<String>): Int64 {
             println("[${result.engine}] ${result.summary}")
             println(result.output)
             return if (result.success) { 0 } else { 1 }
+        case "create-file" =>
+            if (args.size < 2) {
+                eprintln("create-file requires a target path")
+                return 1
+            }
+            let content = if (args.size >= 3 && !args[2].startsWith("--")) { args[2] } else { "" }
+            println(workspaceCreateFileJson(config.workspaceRoot, args[1], content))
+            return 0
         case "lsp-status" =>
             let status = inspectLspStatus(config.workspaceRoot)
             println(status.summary)
@@ -114,6 +126,23 @@ main(args: Array<String>): Int64 {
         case "lsp-workspace-symbols" =>
             let query = if (args.size >= 2 && !args[1].startsWith("--")) { args[1] } else { "" }
             let result = queryLspWorkspaceSymbols(config.workspaceRoot, query)
+            println(result.summary)
+            if (!result.command.isEmpty()) {
+                println("command: ${result.command}")
+            }
+            if (!result.responsePreview.trimAscii().isEmpty()) {
+                println(result.responsePreview)
+            }
+            return if (result.success) { 0 } else { 1 }
+        case "lsp-definition" =>
+            if (args.size < 4) {
+                eprintln("lsp-definition requires path, line, and column")
+                return 1
+            }
+            let result = queryLspDefinition(config.workspaceRoot,
+                args[1],
+                Int64.parse(args[2]),
+                Int64.parse(args[3]))
             println(result.summary)
             if (!result.command.isEmpty()) {
                 println("command: ${result.command}")

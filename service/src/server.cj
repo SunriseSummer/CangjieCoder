@@ -3,6 +3,7 @@ package cangjiecoder
 import std.collection.*
 import std.convert.*
 import std.env.*
+import std.fs.*
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
@@ -40,6 +41,14 @@ func parseJsonIntField(obj: JsonObject, key: String, fallback!: Int64 = 0): Int6
     } catch (e: Exception) {
         return fallback
     }
+}
+
+func parseJsonBoolField(obj: JsonObject, key: String, fallback!: Bool = false): Bool {
+    let raw = jsonField(obj, key).trimAscii().toAsciiLower()
+    if (raw.isEmpty()) {
+        return fallback
+    }
+    return raw == "true"
 }
 
 func jsonStringArrayField(obj: JsonObject, key: String): Array<String> {
@@ -354,6 +363,29 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
     return toolResultJson(true, if (count == 0) { "No workspace matches found" } else { "Found workspace text matches" }, data: data)
 }
 
+func workspaceCreateFileJson(repoRoot: String,
+                             path: String,
+                             content: String,
+                             overwrite!: Bool = false): String {
+    let fullPath = ensurePlannedWorkspacePath(repoRoot, path)
+    let existedBefore = exists(fullPath)
+    let parentPath = Path(fullPath).parent.toString()
+    if (!parentPath.isEmpty() && !exists(parentPath)) {
+        Directory.create(ensurePlannedWorkspacePath(repoRoot, parentPath), recursive: true)
+    }
+    if (existedBefore && !overwrite) {
+        return toolMessageJson(false,
+            "Workspace file creation rejected",
+            "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
+    }
+    writeTextFile(fullPath, content)
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))
+    data.put("bytes", JsonInt(content.toArray().size))
+    data.put("overwritten", JsonBool(existedBefore && overwrite))
+    return toolResultJson(true, "Created workspace file", data: data)
+}
+
 func isAllowedWorkspaceCommand(command: String): Bool {
     let normalized = command.trimAscii().toAsciiLower()
     for (allowed in allowedWorkspaceCommands) {
@@ -417,6 +449,11 @@ func callMcpTool(workspaceRoot: String,
                 let message = replaceExactText(workspaceRoot, path, oldText, newText)
                 let ok = message.startsWith("updated ")
                 return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
+            case "workspace.create_file" =>
+                return workspaceCreateFileJson(workspaceRoot,
+                    jsonField(args, "path"),
+                    jsonField(args, "content"),
+                    overwrite: parseJsonBoolField(args, "overwrite", fallback: false))
             case "workspace.run_build" =>
                 return workspaceRunCommandJson(workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
             case "workspace.run_test" =>
@@ -454,6 +491,13 @@ func callMcpTool(workspaceRoot: String,
                 let result = parseJsonObject(lspQueryJson(queryLspWorkspaceSymbols(workspaceRoot, jsonField(args, "query"))))
                 let ok = jsonField(result, "success") == "true"
                 return toolResultJson(ok, if (ok) { "LSP workspace symbols loaded" } else { "LSP workspace symbol query failed" }, data: result)
+            case "cangjie.lsp_definition" =>
+                let result = parseJsonObject(lspQueryJson(queryLspDefinition(workspaceRoot,
+                    jsonField(args, "path"),
+                    parseJsonIntField(args, "line", fallback: 0),
+                    parseJsonIntField(args, "column", fallback: 0))))
+                let ok = jsonField(result, "success") == "true"
+                return toolResultJson(ok, if (ok) { "LSP definition loaded" } else { "LSP definition query failed" }, data: result)
             case "cangjie.edit_ast_node" =>
                 let path = jsonField(args, "path")
                 let nodeType = jsonField(args, "nodeType")
@@ -664,6 +708,17 @@ func startServer(config: AppConfig): Unit {
             .body(root.toString())
     })
 
+    server.distributor.register("/workspace/create-file", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(workspaceCreateFileJson(config.workspaceRoot,
+                jsonField(request, "path"),
+                jsonField(request, "content"),
+                overwrite: parseJsonBoolField(request, "overwrite", fallback: false)))
+    })
+
     server.distributor.register("/lsp/status", {
         ctx =>
         ctx.responseBuilder
@@ -692,6 +747,17 @@ func startServer(config: AppConfig): Unit {
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(lspQueryJson(queryLspWorkspaceSymbols(config.workspaceRoot, jsonField(request, "query"))))
+    })
+
+    server.distributor.register("/lsp/definition", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(lspQueryJson(queryLspDefinition(config.workspaceRoot,
+                jsonField(request, "path"),
+                parseJsonIntField(request, "line", fallback: 0),
+                parseJsonIntField(request, "column", fallback: 0))))
     })
 
     server.distributor.register("/ast/edit", {

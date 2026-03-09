@@ -85,6 +85,7 @@ cjpm run --run-args "serve --repo /absolute/path/to/project --host 127.0.0.1 --p
 
 - `skills.search`
 - `workspace.read_file`
+- `workspace.create_file`
 - `workspace.replace_text`
 - `cangjie.analyze_file`
 - `project.list_examples`
@@ -93,6 +94,7 @@ cjpm run --run-args "serve --repo /absolute/path/to/project --host 127.0.0.1 --p
 - `cangjie.lsp_probe`
 - `cangjie.lsp_document_symbols`
 - `cangjie.lsp_workspace_symbols`
+- `cangjie.lsp_definition`
 - `cangjie.edit_ast_node`
 
 并且 `tools/list` 已经返回 `inputSchema`，所以从“协议描述能力”上，它已经比最早那版更接近可被 AI 宿主自动发现和调用的工具服务。
@@ -135,6 +137,14 @@ curl -X POST http://127.0.0.1:8080/lsp/document-symbols \
 curl -X POST http://127.0.0.1:8080/lsp/workspace-symbols \
   -H 'content-type: application/json' \
   -d '{"query":"JsonParser"}'
+```
+
+### 查询定义跳转
+
+```bash
+curl -X POST http://127.0.0.1:8080/lsp/definition \
+  -H 'content-type: application/json' \
+  -d '{"path":"src/main.cj","line":10,"column":4}'
 ```
 
 > 注：AI Provider / 会话记忆能力已经迁移到 `agent/`，`service/` 当前只负责工具服务与 LSP / AST / 构建能力。

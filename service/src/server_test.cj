@@ -1,6 +1,7 @@
 package cangjiecoder
 
 import std.env.*
+import std.fs.*
 
 @Test
 class ServerMcpTest {
@@ -26,8 +27,10 @@ class ServerMcpTest {
                 @Expect(payload.contains("workspace.list_files"))
                 @Expect(payload.contains("workspace.search_text"))
                 @Expect(payload.contains("workspace.run_command"))
+                @Expect(payload.contains("workspace.create_file"))
                 @Expect(payload.contains("cangjie.lsp_document_symbols"))
                 @Expect(payload.contains("cangjie.lsp_workspace_symbols"))
+                @Expect(payload.contains("cangjie.lsp_definition"))
             case None =>
                 @Expect(false)
         }
@@ -96,5 +99,37 @@ class ServerMcpTest {
             case None =>
                 @Expect(true)
         }
+    }
+
+    @TestCase
+    func runtimeCanCreateNestedWorkspaceFileViaToolsCall() {
+        let workspace = Directory.createTemp(getTempDirectory())
+        let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"nested/demo/generated.cj\",\"content\":\"package demo\\n\\nfunc generated(): Int64 {\\n    1\\n}\\n\"}}}")
+        match (response) {
+            case Some(payload) =>
+                @Expect(payload.contains("\"ok\":true"))
+                @Expect(exists("${workspace.toString()}/nested/demo/generated.cj"))
+            case None =>
+                @Expect(false)
+        }
+        removeIfExists(workspace.toString(), recursive: true)
+    }
+
+    @TestCase
+    func runtimeRejectsCreateFileOverwriteByDefault() {
+        let workspace = Directory.createTemp(getTempDirectory())
+        let filePath = "${workspace.toString()}/demo.txt"
+        writeTextFile(filePath, "old")
+        let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"demo.txt\",\"content\":\"new\"}}}")
+        match (response) {
+            case Some(payload) =>
+                @Expect(payload.contains("\"ok\":false"))
+                @Expect(readTextFile(filePath), "old")
+            case None =>
+                @Expect(false)
+        }
+        removeIfExists(workspace.toString(), recursive: true)
     }
 }

@@ -24,6 +24,16 @@ class AgentHelpersTest {
     }
 
     @TestCase
+    func appendValidationStepsTreatsCreateFileAsMutation() {
+        let args = JsonObject()
+        args.put("path", JsonString("src/generated_helper.cj"))
+        let steps = appendValidationSteps([PlannedToolCall("workspace.create_file", args, "create helper")], allowedTools: ["workspace.create_file", "workspace.run_build", "workspace.run_test"])
+        @Expect(steps.size == 3)
+        @Expect(steps[1].tool, "workspace.run_build")
+        @Expect(steps[2].tool, "workspace.run_test")
+    }
+
+    @TestCase
     func parseConfigKeepsWholePromptTail() {
         let config = parseConfig([
             "--workspace",

@@ -233,6 +233,18 @@ func buildDidOpenNotification(path: String): String {
     return buildLspNotification("textDocument/didOpen", params)
 }
 
+func buildTextDocumentPositionParams(fullPath: String, line: Int64, column: Int64): JsonObject {
+    let textDocument = JsonObject()
+    textDocument.put("uri", JsonString(fileUri(fullPath)))
+    let position = JsonObject()
+    position.put("line", JsonInt(line))
+    position.put("character", JsonInt(column))
+    let params = JsonObject()
+    params.put("textDocument", textDocument)
+    params.put("position", position)
+    return params
+}
+
 func lspResultToJsonValue(text: String): JsonValue {
     if (text.trimAscii().isEmpty()) {
         return JsonNull()
@@ -369,6 +381,14 @@ func queryLspWorkspaceSymbols(repoRoot: String, query: String): LspQueryResult {
     let params = JsonObject()
     params.put("query", JsonString(query))
     return runLspRequest(repoRoot, "workspace/symbol", params)
+}
+
+func queryLspDefinition(repoRoot: String, path: String, line: Int64, column: Int64): LspQueryResult {
+    let fullPath = ensureWorkspacePath(repoRoot, path)
+    return runLspRequest(repoRoot,
+        "textDocument/definition",
+        buildTextDocumentPositionParams(fullPath, line, column),
+        setupNotifications: [buildDidOpenNotification(fullPath)])
 }
 
 func probeLspServer(repoRoot: String): LspProbeResult {
