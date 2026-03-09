@@ -48,4 +48,15 @@ class ProjectBootstrapTest {
         @Expect(bodies.size, 2)
         @Expect(bodies[0].contains("\"capabilities\""))
     }
+
+    @TestCase
+    func fileUriEscapesWhitespace() {
+        let path = "${getWorkingDirectory().toString()}/target/test file.cj"
+        removeIfExists(path)
+        writeTextFile(path, "main() {}")
+        let uri = fileUri(path)
+        @Expect(uri.startsWith("file://"))
+        @Expect(uri.contains("%20"))
+        removeIfExists(path)
+    }
 }

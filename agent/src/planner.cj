@@ -176,6 +176,7 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let prompt = context.userPrompt
     let normalized = prompt.toAsciiLower()
     let needsMutation = promptNeedsMutation(prompt)
+    let allowedTools = allowedToolNames(context.toolsJson)
     let workspaceFiles = extractWorkspaceFiles(context.workspaceSnapshot)
     let steps = ArrayList<PlannedToolCall>()
 
@@ -205,6 +206,13 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
 
     let candidateFile = extractPromptFilePath(prompt, workspaceFiles)
     if (!candidateFile.isEmpty() && promptNeedsAnalysis(prompt)) {
+        if (containsTool(allowedTools, "cangjie.lsp_document_symbols")) {
+            let lspArguments = JsonObject()
+            lspArguments.put("path", JsonString(candidateFile))
+            // LSP 符号查询比纯文本扫描更接近语义结构，
+            // 先拿它补一份轮廓，再决定是否继续走 analyze/编辑步骤。
+            steps.add(PlannedToolCall("cangjie.lsp_document_symbols", lspArguments, "Inspect document-level symbols through the configured Cangjie LSP server."))
+        }
         let arguments = JsonObject()
         arguments.put("path", JsonString(candidateFile))
         // 选一个代表性源码文件做 analyze，通常比直接修改更稳，

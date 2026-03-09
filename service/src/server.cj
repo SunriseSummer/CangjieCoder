@@ -72,26 +72,6 @@ func jsonStringArrayField(obj: JsonObject, key: String): Array<String> {
     }
 }
 
-func effectiveModelName(provider: String, model: String): String {
-    return if (model.trimAscii().isEmpty()) { provider } else { model }
-}
-
-func providersJson(): String {
-    let array = JsonArray()
-    for (provider in builtinProviders()) {
-        let item = JsonObject()
-        item.put("name", JsonString(provider.name))
-        item.put("displayName", JsonString(provider.displayName))
-        item.put("baseUrl", JsonString(provider.baseUrl))
-        item.put("apiKeyEnv", JsonString(provider.apiKeyEnv))
-        item.put("defaultModel", JsonString(provider.defaultModel))
-        array.add(item)
-    }
-    let root = JsonObject()
-    root.put("providers", array)
-    return root.toString()
-}
-
 func skillsJson(skills: Array<SkillRecord>): String {
     let array = JsonArray()
     for (skill in skills) {
@@ -148,6 +128,18 @@ func lspProbeJson(result: LspProbeResult): String {
     root.put("command", JsonString(result.command))
     root.put("summary", JsonString(result.summary))
     root.put("responsePreview", JsonString(result.responsePreview))
+    return root.toString()
+}
+
+func lspQueryJson(result: LspQueryResult): String {
+    let root = JsonObject()
+    root.put("available", JsonBool(result.available))
+    root.put("success", JsonBool(result.success))
+    root.put("command", JsonString(result.command))
+    root.put("method", JsonString(result.method))
+    root.put("summary", JsonString(result.summary))
+    root.put("responsePreview", JsonString(result.responsePreview))
+    root.put("result", lspResultJsonValue(result.resultJson))
     return root.toString()
 }
 
@@ -227,14 +219,6 @@ func mcpToolCallResultJson(content: String): String {
     return result.toString()
 }
 
-func providerReplySucceeded(reply: String): Bool {
-    // Provider failures are surfaced as plain-text sentinel prefixes so the
-    // agent can degrade locally without parsing provider-specific error JSON.
-    return !reply.startsWith("Missing API key:") &&
-        !reply.startsWith("Unsupported provider:") &&
-        !reply.startsWith("Provider request failed:")
-}
-
 func astEditSucceeded(message: String): Bool {
     return !message.startsWith("tree-sitter unavailable") &&
         !message.contains("No AST node matched") &&
@@ -280,60 +264,6 @@ func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
         "No precise analyzer is configured. Install tree-sitter or the Cangjie toolchain and set TREE_SITTER_CANGJIE / CJLINT_COMMAND / CJC_COMMAND.",
         shortPreview("${compileStdout}\n${compileStderr}", maxLines: 12)
     )
-}
-
-func buildSystemPrompt(registry: SkillRegistry, userPrompt: String, analysis: String): String {
-    let context = registry.buildPromptContext(userPrompt, limit: 3)
-    let sections = ArrayList<String>()
-    sections.add("You are CangjieCoder, a lightweight AI coding assistant focused on Cangjie projects.")
-    sections.add("Prioritize Cangjie-specific guidance, use the local skill library before guessing, and keep edits surgical.")
-    sections.add("When the task targets Cangjie code, prefer precise file context and analyzer output to reduce token usage.")
-    if (!context.trimAscii().isEmpty()) {
-        sections.add("Relevant local skills:\n${context}")
-    }
-    if (!analysis.trimAscii().isEmpty()) {
-        sections.add("Analyzer context:\n${analysis}")
-    }
-    return String.join(sections.toArray(), delimiter: "\n\n")
-}
-
-func chatWithMemoryJson(repoRoot: String,
-                        registry: SkillRegistry,
-                        conversations: ConversationStore,
-                        provider: String,
-                        model: String,
-                        prompt: String,
-                        analyzePath: String,
-                        sessionId: String): String {
-    let session = conversations.getOrCreate(sessionId: sessionId)
-    // Analyzer output is injected into the system prompt instead of the user turn
-    // so provider-side memory still sees a clean conversational transcript.
-    let analysis = if (analyzePath.trimAscii().isEmpty()) {
-        ""
-    } else {
-        analyzeCangjieFile(repoRoot, analyzePath).output
-    }
-    var systemPrompt = buildSystemPrompt(registry, prompt, analysis)
-    let historyPrompt = session.buildPrompt(limit: 6)
-    if (!historyPrompt.trimAscii().isEmpty()) {
-        systemPrompt = "${systemPrompt}\n\nRecent conversation turns:\n${historyPrompt}"
-    }
-    let reply = chatWithProvider(provider, model, systemPrompt, prompt)
-    // Record both sides after the provider call so a failed reply is still visible
-    // to later turns and to MCP clients inspecting the conversation state.
-    session.addTurn("user", prompt)
-    session.addTurn("assistant", reply)
-
-    let root = JsonObject()
-    root.put("sessionId", JsonString(session.sessionId))
-    root.put("provider", JsonString(provider))
-    root.put("model", JsonString(effectiveModelName(provider, model)))
-    root.put("systemPrompt", JsonString(systemPrompt))
-    root.put("historyPrompt", JsonString(historyPrompt))
-    root.put("reply", JsonString(reply))
-    root.put("turnCount", JsonInt(session.turnCount))
-    root.put("success", JsonBool(providerReplySucceeded(reply)))
-    return root.toString()
 }
 
 func resolveWorkspaceCommandDirectory(repoRoot: String, path: String): String {
@@ -453,7 +383,6 @@ func workspaceRunCommandJson(repoRoot: String,
 func callMcpTool(workspaceRoot: String,
                  serviceRoot: String,
                  registry: SkillRegistry,
-                 conversations: ConversationStore,
                  toolName: String,
                  args: JsonObject): String {
     try {
@@ -510,25 +439,6 @@ func callMcpTool(workspaceRoot: String,
                 let message = bootstrapJsonParserProject(serviceRoot, workspaceRoot, path)
                 let ok = message.startsWith("Bootstrapped ")
                 return toolMessageJson(ok, if (ok) { "Bootstrapped JsonParser example" } else { "JsonParser bootstrap did not complete" }, message)
-            case "conversation.start_session" =>
-                let session = conversations.createSession()
-                let data = JsonObject()
-                data.put("sessionId", JsonString(session.sessionId))
-                return toolResultJson(true, "Created conversation session", data: data)
-            case "conversation.get_history" =>
-                let history = parseJsonObject(conversations.historyJson(jsonField(args, "sessionId")))
-                return toolResultJson(true, "Loaded conversation history", data: history)
-            case "conversation.chat" =>
-                let chat = parseJsonObject(chatWithMemoryJson(workspaceRoot,
-                    registry,
-                    conversations,
-                    jsonField(args, "provider", fallback: "kimi"),
-                    jsonField(args, "model"),
-                    jsonField(args, "prompt"),
-                    jsonField(args, "analyzePath"),
-                    jsonField(args, "sessionId")))
-                let ok = jsonField(chat, "success") == "true"
-                return toolResultJson(ok, if (ok) { "Conversation turn completed" } else { "Conversation turn failed" }, data: chat)
             case "cangjie.lsp_status" =>
                 let status = parseJsonObject(lspStatusJson(inspectLspStatus(workspaceRoot)))
                 return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
@@ -536,6 +446,14 @@ func callMcpTool(workspaceRoot: String,
                 let result = parseJsonObject(lspProbeJson(probeLspServer(workspaceRoot)))
                 let ok = jsonField(result, "success") == "true"
                 return toolResultJson(ok, if (ok) { "LSP probe succeeded" } else { "LSP probe did not complete cleanly" }, data: result)
+            case "cangjie.lsp_document_symbols" =>
+                let result = parseJsonObject(lspQueryJson(queryLspDocumentSymbols(workspaceRoot, jsonField(args, "path"))))
+                let ok = jsonField(result, "success") == "true"
+                return toolResultJson(ok, if (ok) { "LSP document symbols loaded" } else { "LSP document symbol query failed" }, data: result)
+            case "cangjie.lsp_workspace_symbols" =>
+                let result = parseJsonObject(lspQueryJson(queryLspWorkspaceSymbols(workspaceRoot, jsonField(args, "query"))))
+                let ok = jsonField(result, "success") == "true"
+                return toolResultJson(ok, if (ok) { "LSP workspace symbols loaded" } else { "LSP workspace symbol query failed" }, data: result)
             case "cangjie.edit_ast_node" =>
                 let path = jsonField(args, "path")
                 let nodeType = jsonField(args, "nodeType")
@@ -556,13 +474,11 @@ class McpRuntime {
     let workspaceRoot: String
     let serviceRoot: String
     let registry: SkillRegistry
-    let conversations: ConversationStore
 
     public init(workspaceRoot: String, serviceRoot!: String = "") {
         this.workspaceRoot = workspaceRoot
         this.serviceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
         this.registry = SkillRegistry(this.serviceRoot)
-        this.conversations = ConversationStore()
     }
 
     public func handleRequest(body: String): ?String {
@@ -610,7 +526,6 @@ class McpRuntime {
                     return Some(jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(workspaceRoot,
                         serviceRoot,
                         registry,
-                        conversations,
                         toolName,
                         toolArgs))))
                 case _ =>
@@ -710,13 +625,6 @@ func startServer(config: AppConfig): Unit {
             .body("{\"status\":\"ok\"}")
     })
 
-    server.distributor.register("/providers", {
-        ctx =>
-        ctx.responseBuilder
-            .header("Content-Type", "application/json")
-            .body(providersJson())
-    })
-
     server.distributor.register("/projects/examples", {
         ctx =>
         ctx.responseBuilder
@@ -774,22 +682,20 @@ func startServer(config: AppConfig): Unit {
             .body(lspProbeJson(probeLspServer(config.workspaceRoot)))
     })
 
-    server.distributor.register("/conversations/start", {
-        ctx =>
-        let session = runtime.conversations.createSession()
-        let root = JsonObject()
-        root.put("sessionId", JsonString(session.sessionId))
-        ctx.responseBuilder
-            .header("Content-Type", "application/json")
-            .body(root.toString())
-    })
-
-    server.distributor.register("/conversations/history", {
+    server.distributor.register("/lsp/document-symbols", {
         ctx =>
         let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(runtime.conversations.historyJson(jsonField(request, "sessionId")))
+            .body(lspQueryJson(queryLspDocumentSymbols(config.workspaceRoot, jsonField(request, "path"))))
+    })
+
+    server.distributor.register("/lsp/workspace-symbols", {
+        ctx =>
+        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
+        ctx.responseBuilder
+            .header("Content-Type", "application/json")
+            .body(lspQueryJson(queryLspWorkspaceSymbols(config.workspaceRoot, jsonField(request, "query"))))
     })
 
     server.distributor.register("/ast/edit", {
@@ -804,21 +710,6 @@ func startServer(config: AppConfig): Unit {
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(root.toString())
-    })
-
-    server.distributor.register("/chat", {
-        ctx =>
-        let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
-        ctx.responseBuilder
-            .header("Content-Type", "application/json")
-            .body(chatWithMemoryJson(config.workspaceRoot,
-                runtime.registry,
-                runtime.conversations,
-                jsonField(request, "provider", fallback: "kimi"),
-                jsonField(request, "model"),
-                jsonField(request, "prompt"),
-                jsonField(request, "analyzePath"),
-                jsonField(request, "sessionId")))
     })
 
     server.distributor.register("/mcp", {

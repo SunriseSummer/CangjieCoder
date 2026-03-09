@@ -26,6 +26,8 @@ class ServerMcpTest {
                 @Expect(payload.contains("workspace.list_files"))
                 @Expect(payload.contains("workspace.search_text"))
                 @Expect(payload.contains("workspace.run_command"))
+                @Expect(payload.contains("cangjie.lsp_document_symbols"))
+                @Expect(payload.contains("cangjie.lsp_workspace_symbols"))
             case None =>
                 @Expect(false)
         }

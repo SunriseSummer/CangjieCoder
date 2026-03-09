@@ -10,19 +10,15 @@ func printUsage(): Unit {
     println("  cangjiecoder skills-search <query> [--repo WORKSPACE]")
     println("  cangjiecoder examples [--repo WORKSPACE]")
     println("  cangjiecoder bootstrap-json-parser <path> [--repo WORKSPACE]")
-    println("  cangjiecoder providers")
     println("  cangjiecoder analyze <path> [--repo PATH]")
     println("  cangjiecoder lsp-status [--repo PATH]")
     println("  cangjiecoder lsp-probe [--repo PATH]")
+    println("  cangjiecoder lsp-document-symbols <path> [--repo PATH]")
+    println("  cangjiecoder lsp-workspace-symbols [query] [--repo PATH]")
     println("")
     println("Environment:")
     println("  --repo                target workspace root; defaults to the service directory")
     println("  STDX_PATH            stdx binary dependency directory")
-    println("  KIMI_API_KEY         API key for Kimi / Moonshot")
-    println("  GLM_API_KEY          API key for GLM / Zhipu")
-    println("  OPENROUTER_API_KEY   API key for OpenRouter (supports openrouter/free and :free models)")
-    println("  OPENROUTER_HTTP_REFERER optional app/site URL sent to OpenRouter")
-    println("  OPENROUTER_APP_TITLE optional app name sent to OpenRouter")
     println("  TREE_SITTER_CANGJIE  tree-sitter command with Cangjie grammar support")
     println("  CJLINT_COMMAND       override cjlint command")
     println("  CJC_COMMAND          override cjc command")
@@ -62,9 +58,6 @@ main(args: Array<String>): Int64 {
                 println("")
             }
             return 0
-        case "providers" =>
-            println(listProvidersText())
-            return 0
         case "examples" =>
             for (project in listExampleProjects(config.serviceRoot)) {
                 println("${project.id}: ${project.description}")
@@ -96,6 +89,31 @@ main(args: Array<String>): Int64 {
             return if (status.available) { 0 } else { 1 }
         case "lsp-probe" =>
             let result = probeLspServer(config.workspaceRoot)
+            println(result.summary)
+            if (!result.command.isEmpty()) {
+                println("command: ${result.command}")
+            }
+            if (!result.responsePreview.trimAscii().isEmpty()) {
+                println(result.responsePreview)
+            }
+            return if (result.success) { 0 } else { 1 }
+        case "lsp-document-symbols" =>
+            if (args.size < 2) {
+                eprintln("lsp-document-symbols requires a file path")
+                return 1
+            }
+            let result = queryLspDocumentSymbols(config.workspaceRoot, args[1])
+            println(result.summary)
+            if (!result.command.isEmpty()) {
+                println("command: ${result.command}")
+            }
+            if (!result.responsePreview.trimAscii().isEmpty()) {
+                println(result.responsePreview)
+            }
+            return if (result.success) { 0 } else { 1 }
+        case "lsp-workspace-symbols" =>
+            let query = if (args.size >= 2 && !args[1].startsWith("--")) { args[1] } else { "" }
+            let result = queryLspWorkspaceSymbols(config.workspaceRoot, query)
             println(result.summary)
             if (!result.command.isEmpty()) {
                 println("command: ${result.command}")

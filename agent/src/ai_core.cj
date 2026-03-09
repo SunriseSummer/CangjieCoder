@@ -1,4 +1,4 @@
-package cangjiecoder
+package cangjiecoderagent
 
 import std.collection.*
 import std.env.*
@@ -6,6 +6,90 @@ import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
 import stdx.net.tls.*
+
+// 保留有限的最近对话，既能给规划/总结补上下文，也避免会话无限膨胀。
+const CONVERSATION_TURN_LIMIT: Int64 = 12
+
+struct ConversationTurn {
+    public ConversationTurn(let role: String, let content: String) {}
+}
+
+struct ProviderSpec {
+    public ProviderSpec(let name: String,
+                        let displayName: String,
+                        let baseUrl: String,
+                        let apiKeyEnv: String,
+                        let defaultModel: String) {}
+}
+
+class ConversationSession {
+    public let sessionId: String
+    let turns = ArrayList<ConversationTurn>()
+
+    public init(sessionId: String) {
+        this.sessionId = sessionId
+    }
+
+    public func addTurn(role: String, content: String): Unit {
+        if (content.trimAscii().isEmpty()) {
+            return
+        }
+        turns.add(ConversationTurn(role, content))
+        while (turns.size > CONVERSATION_TURN_LIMIT) {
+            turns.remove(at: 0)
+        }
+    }
+
+    public func history(limit!: Int64 = 6): Array<ConversationTurn> {
+        let results = ArrayList<ConversationTurn>()
+        let start = if (turns.size > limit) { turns.size - limit } else { 0 }
+        for (index in start..turns.size) {
+            results.add(turns[index])
+        }
+        return results.toArray()
+    }
+
+    public func buildPrompt(limit!: Int64 = 6): String {
+        let lines = ArrayList<String>()
+        for (turn in history(limit: limit)) {
+            lines.add("${turn.role}: ${shortPreview(turn.content, maxLines: 4)}")
+        }
+        return String.join(lines.toArray(), delimiter: "\n")
+    }
+
+    public prop turnCount: Int64 {
+        get() {
+            return turns.size
+        }
+    }
+}
+
+class ConversationStore {
+    let sessions = HashMap<String, ConversationSession>()
+    var nextSessionId: Int64 = 1
+
+    public func createSession(): ConversationSession {
+        let session = ConversationSession("session-${nextSessionId}")
+        nextSessionId += 1
+        sessions[session.sessionId] = session
+        return session
+    }
+
+    public func getOrCreate(sessionId!: String = ""): ConversationSession {
+        let normalized = sessionId.trimAscii()
+        if (normalized.isEmpty()) {
+            return createSession()
+        }
+        match (sessions.get(normalized)) {
+            case Some(session) =>
+                return session
+            case None =>
+                let created = ConversationSession(normalized)
+                sessions[normalized] = created
+                return created
+        }
+    }
+}
 
 func builtinProviders(): Array<ProviderSpec> {
     return [
@@ -78,11 +162,15 @@ func providerResponseToText(body: String): String {
             }
         }
     } catch (e: Exception) {
-        // Preserve the raw body when the provider response is not in the expected
-        // chat-completions shape so callers still receive diagnostic detail.
         return body
     }
     return body
+}
+
+func providerReplySucceeded(reply: String): Bool {
+    return !reply.startsWith("Missing API key:") &&
+        !reply.startsWith("Unsupported provider:") &&
+        !reply.startsWith("Provider request failed:")
 }
 
 func chatWithProvider(providerName: String,
@@ -118,8 +206,6 @@ func chatWithProvider(providerName: String,
 
             requestObject.put("messages", messages)
 
-            // HTTPS providers share the same request shape, so transport selection
-            // is reduced to whether TLS needs to be enabled on the client.
             let clientBuilder = if (provider.baseUrl.startsWith("https://")) {
                 let tlsConfig = TlsClientConfig()
                 ClientBuilder().tlsConfig(tlsConfig)
@@ -139,8 +225,6 @@ func chatWithProvider(providerName: String,
                     if (!referer.isEmpty()) {
                         requestBuilder = requestBuilder.header("HTTP-Referer", referer)
                     }
-                    // OpenRouter accepts optional attribution headers that do not
-                    // apply to the other OpenAI-compatible providers.
                     if (!title.isEmpty()) {
                         requestBuilder = requestBuilder.header("X-Title", title)
                     }
@@ -158,4 +242,30 @@ func chatWithProvider(providerName: String,
         case None =>
             return "Unsupported provider: ${providerName}. Supported providers: ${providerNamesText()}"
     }
+}
+
+func planningSystemPrompt(): String {
+    return "You are CangjieCoder Agent. Generate precise plans for Cangjie projects, prefer MCP-exposed LSP and AST tools for accurate code understanding, and keep actions bounded and surgical."
+}
+
+func reportingSystemPrompt(): String {
+    return "You are CangjieCoder Agent. Summarize executed work in concise Chinese, grounded strictly in the provided execution transcript."
+}
+
+func conversationTurn(store: ConversationStore,
+                      provider: String,
+                      model: String,
+                      systemPrompt: String,
+                      prompt: String,
+                      sessionId: String): ModelTurn {
+    let session = store.getOrCreate(sessionId: sessionId)
+    var effectiveSystemPrompt = systemPrompt
+    let historyPrompt = session.buildPrompt(limit: 6)
+    if (!historyPrompt.trimAscii().isEmpty()) {
+        effectiveSystemPrompt = "${effectiveSystemPrompt}\n\nRecent conversation turns:\n${historyPrompt}"
+    }
+    let reply = chatWithProvider(provider, model, effectiveSystemPrompt, prompt)
+    session.addTurn("user", prompt)
+    session.addTurn("assistant", reply)
+    return ModelTurn(reply, session.sessionId, providerReplySucceeded(reply))
 }

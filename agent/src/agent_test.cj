@@ -63,18 +63,19 @@ class AgentHelpersTest {
     func fallbackPlanReadsWorkspaceContextForAnalysisTasks() {
         let context = AgentPlanningContext(
             "请分析并优化这个仓颉项目",
-            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
+            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.lsp_document_symbols\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
             "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}",
             "{\"ok\":true,\"data\":{\"projects\":[]}}"
         )
         let plan = parsePlan("", context)
-        @Expect(plan.steps.size == 6)
+        @Expect(plan.steps.size == 7)
         @Expect(plan.steps[0].tool, "workspace.list_files")
         @Expect(plan.steps[1].tool, "workspace.read_file")
         @Expect(plan.steps[2].tool, "workspace.read_file")
-        @Expect(plan.steps[3].tool, "cangjie.analyze_file")
-        @Expect(plan.steps[4].tool, "workspace.run_build")
-        @Expect(plan.steps[5].tool, "workspace.run_test")
+        @Expect(plan.steps[3].tool, "cangjie.lsp_document_symbols")
+        @Expect(plan.steps[4].tool, "cangjie.analyze_file")
+        @Expect(plan.steps[5].tool, "workspace.run_build")
+        @Expect(plan.steps[6].tool, "workspace.run_test")
     }
 
     @TestCase

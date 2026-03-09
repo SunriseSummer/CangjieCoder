@@ -33,6 +33,16 @@ struct LspProbeResult {
                           let responsePreview: String) {}
 }
 
+struct LspQueryResult {
+    public LspQueryResult(let available: Bool,
+                          let success: Bool,
+                          let command: String,
+                          let method: String,
+                          let summary: String,
+                          let responsePreview: String,
+                          let resultJson: String) {}
+}
+
 func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
     let examplesRoot = resolveBundledPath(serviceRoot, "examples")
     return [
@@ -197,6 +207,163 @@ func extractLspBodies(raw: String): Array<String> {
         offset = bodyEnd
     }
     return bodies.toArray()
+}
+
+func fileUri(path: String): String {
+    let canonicalPath = canonicalize(path).toString()
+    let encodedPath = canonicalPath
+        .replace("%", "%25")
+        .replace(" ", "%20")
+        .replace("#", "%23")
+        .replace("?", "%3F")
+    return "file://${encodedPath}"
+}
+
+func buildDidOpenNotification(path: String): String {
+    let textDocument = JsonObject()
+    textDocument.put("uri", JsonString(fileUri(path)))
+    textDocument.put("languageId", JsonString("cangjie"))
+    textDocument.put("version", JsonInt(1))
+    textDocument.put("text", JsonString(readTextFile(path)))
+    let params = JsonObject()
+    params.put("textDocument", textDocument)
+    return buildLspNotification("textDocument/didOpen", params)
+}
+
+func lspResultJsonValue(text: String): JsonValue {
+    if (text.trimAscii().isEmpty()) {
+        return JsonNull()
+    }
+    try {
+        return JsonValue.fromStr(text)
+    } catch (e: Exception) {
+        return JsonString(text)
+    }
+}
+
+func runLspRequest(repoRoot: String,
+                   method: String,
+                   params: JsonValue,
+                   setupNotifications!: Array<String> = []): LspQueryResult {
+    match (resolveLspCommand(repoRoot)) {
+        case None =>
+            return LspQueryResult(false, false, "", method, "No Cangjie LSP binary was detected for this request.", "", "null")
+        case Some(command) =>
+            try {
+                let process = launch(command,
+                    [],
+                    workingDirectory: Path(repoRoot),
+                    stdIn: ProcessRedirect.Pipe,
+                    stdOut: ProcessRedirect.Pipe,
+                    stdErr: ProcessRedirect.Pipe)
+                let initializeParams = JsonObject()
+                initializeParams.put("processId", JsonNull())
+                let clientInfo = JsonObject()
+                clientInfo.put("name", JsonString("CangjieCoder"))
+                clientInfo.put("version", JsonString(APP_VERSION))
+                initializeParams.put("clientInfo", clientInfo)
+                initializeParams.put("rootUri", JsonString(fileUri(repoRoot)))
+                let workspaceFolder = JsonObject()
+                workspaceFolder.put("uri", JsonString(fileUri(repoRoot)))
+                workspaceFolder.put("name", JsonString(Path(repoRoot).fileName))
+                let workspaceFolders = JsonArray()
+                workspaceFolders.add(workspaceFolder)
+                initializeParams.put("workspaceFolders", workspaceFolders)
+                initializeParams.put("capabilities", JsonObject())
+                let initialize = buildLspRequest(1, "initialize", initializeParams)
+                let initialized = buildLspNotification("initialized", JsonObject())
+                let requestId: Int64 = 3
+                let request = buildLspRequest(requestId, method, params)
+                let shutdown = buildLspRequest(4, "shutdown", JsonNull())
+                let exitRequest = buildLspNotification("exit", JsonNull())
+                let frames = ArrayList<String>()
+                frames.add(encodeLspFrame(initialize))
+                frames.add(encodeLspFrame(initialized))
+                for (notification in setupNotifications) {
+                    frames.add(encodeLspFrame(notification))
+                }
+                frames.add(encodeLspFrame(request))
+                frames.add(encodeLspFrame(shutdown))
+                frames.add(encodeLspFrame(exitRequest))
+                process.stdInPipe.write(String.join(frames.toArray(), delimiter: "").toArray())
+                process.stdInPipe.flush()
+                let (_, stdoutBytes, stderrBytes) = process.waitOutput()
+                let stdout = String.fromUtf8(stdoutBytes)
+                let stderr = String.fromUtf8(stderrBytes)
+                let bodies = extractLspBodies(stdout)
+                for (body in bodies) {
+                    try {
+                        let response = JsonValue.fromStr(body).asObject()
+                        let responseId = match (response.get("id")) {
+                            case Some(value) => value.toString()
+                            case None => ""
+                        }
+                        if (responseId != "${requestId}") {
+                            continue
+                        }
+                        if (let Some(errorValue) <- response.get("error")) {
+                            return LspQueryResult(true,
+                                false,
+                                command,
+                                method,
+                                "LSP request returned an error.",
+                                shortPreview(body, maxLines: 12),
+                                errorValue.toString())
+                        }
+                        if (let Some(resultValue) <- response.get("result")) {
+                            let resultText = resultValue.toString()
+                            let summary = if (resultText == "null" || resultText == "[]" || resultText == "{}") {
+                                "LSP request succeeded, but the server returned no symbol payload."
+                            } else {
+                                "LSP request succeeded."
+                            }
+                            return LspQueryResult(true,
+                                true,
+                                command,
+                                method,
+                                summary,
+                                shortPreview(body, maxLines: 12),
+                                resultText)
+                        }
+                    } catch (e: Exception) {
+                        continue
+                    }
+                }
+                return LspQueryResult(true,
+                    false,
+                    command,
+                    method,
+                    "LSP request produced no parseable response for the requested method.",
+                    shortPreview(if (stderr.trimAscii().isEmpty()) { stdout } else { stderr }, maxLines: 12),
+                    "null")
+            } catch (e: Exception) {
+                return LspQueryResult(true,
+                    false,
+                    command,
+                    method,
+                    "LSP request failed.",
+                    shortPreview(e.toString(), maxLines: 12),
+                    "null")
+            }
+    }
+}
+
+func queryLspDocumentSymbols(repoRoot: String, path: String): LspQueryResult {
+    let fullPath = ensureWorkspacePath(repoRoot, path)
+    let params = JsonObject()
+    let textDocument = JsonObject()
+    textDocument.put("uri", JsonString(fileUri(fullPath)))
+    params.put("textDocument", textDocument)
+    return runLspRequest(repoRoot,
+        "textDocument/documentSymbol",
+        params,
+        setupNotifications: [buildDidOpenNotification(fullPath)])
+}
+
+func queryLspWorkspaceSymbols(repoRoot: String, query: String): LspQueryResult {
+    let params = JsonObject()
+    params.put("query", JsonString(query))
+    return runLspRequest(repoRoot, "workspace/symbol", params)
 }
 
 func probeLspServer(repoRoot: String): LspProbeResult {

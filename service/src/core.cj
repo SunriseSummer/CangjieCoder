@@ -23,14 +23,6 @@ struct SkillRecord {
                        let path: String) {}
 }
 
-struct ProviderSpec {
-    public ProviderSpec(let name: String,
-                        let displayName: String,
-                        let baseUrl: String,
-                        let apiKeyEnv: String,
-                        let defaultModel: String) {}
-}
-
 struct AnalysisResult {
     public AnalysisResult(let engine: String,
                           let success: Bool,

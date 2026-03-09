@@ -30,7 +30,7 @@ CangjieCoder 现在拆分为两个仓颉项目：
 
 - Cangjie SDK 1.0.5
 - cangjie-stdx-linux-x64-1.0.5.1
-- Kimi API Key（运行智能体时通过环境变量注入，不写入仓库）
+- 模型 API Key（仅在运行 `agent/` 时通过环境变量注入，不写入仓库）
 
 示例：
 
@@ -40,7 +40,7 @@ export CANGJIE_SDK_HOME=/path/to/cangjie-sdk
 source "${CANGJIE_SDK_HOME}/envsetup.sh"
 export STDX_PATH=/path/to/cangjie-stdx/linux_x86_64_cjnative/dynamic/stdx
 
-# 2) 配置模型 Key（示例变量名，不要把密钥写入代码）
+# 2) 配置模型 Key（仅 agent 需要；示例变量名，不要把密钥写入代码）
 export KIMI_API_KEY=your_kimi_api_key
 ```
 
@@ -77,4 +77,4 @@ cd agent
 cjpm run --run-args "--workspace /absolute/path/to/workspace --prompt 为当前仓颉项目生成重构计划并执行必要的构建测试"
 ```
 
-默认模型为 **Kimi 2.5**（`kimi-k2.5`），并通过 `conversation.chat` 生成工具执行计划，再由智能体依次调用 `service` 的 MCP 工具完成任务。
+默认模型为 **Kimi 2.5**（`kimi-k2.5`）。现在所有 AI Provider、会话记忆与最终总结逻辑都由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含更细粒度的 LSP 符号查询与 AST 编辑能力）。
