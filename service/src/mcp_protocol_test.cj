@@ -17,4 +17,23 @@ class McpProtocolTest {
         @Expect(json.contains("workspace.run_test"))
         @Expect(json.contains("workspace.run_command"))
     }
+
+    @TestCase
+    func toolRegistryCoversAllDefinedTools() {
+        let definitions = buildToolDefinitions()
+        let registry = buildMcpToolRegistry()
+        for (tool in definitions) {
+            @Expect(registry.contains(tool.name))
+        }
+    }
+
+    @TestCase
+    func methodRegistryCoversCoreMcpMethods() {
+        let registry = buildMcpMethodRegistry()
+        @Expect(registry.contains("initialize"))
+        @Expect(registry.contains("ping"))
+        @Expect(registry.contains("notifications/initialized"))
+        @Expect(registry.contains("tools/list"))
+        @Expect(registry.contains("tools/call"))
+    }
 }

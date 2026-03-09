@@ -76,6 +76,171 @@ func optionValue(options: HashMap<String, String>, longKey: String, shortKey: St
     return options.get(longKey) ?? options.get(shortKey) ?? fallback
 }
 
+// CLI 子命令处理函数类型：接收配置和非选项参数，返回退出码
+type CliSubcommandHandler = (AppConfig, Array<String>) -> Int64
+
+// 打印 LSP 查询结果的通用格式
+func printLspQueryResult(result: LspQueryResult): Int64 {
+    println(result.summary)
+    if (!result.command.isEmpty()) {
+        println("command: ${result.command}")
+    }
+    if (!result.responsePreview.trimAscii().isEmpty()) {
+        println(result.responsePreview)
+    }
+    return if (result.success) { 0 } else { 1 }
+}
+
+// 各 CLI 子命令的独立处理函数
+
+func cmdServe(config: AppConfig, _: Array<String>): Int64 {
+    startServer(config)
+    return 0
+}
+
+func cmdMcpStdio(config: AppConfig, _: Array<String>): Int64 {
+    startMcpStdioServer(config)
+    return 0
+}
+
+func cmdSkills(config: AppConfig, _: Array<String>): Int64 {
+    let registry = SkillRegistry(config.serviceRoot)
+    for (skill in registry.list(limit: 200)) {
+        println("${skill.id}: ${skill.description}")
+    }
+    return 0
+}
+
+func cmdSkillsSearch(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let query = nonOptionAt(nonOptions, 1)
+    if (query.isEmpty()) {
+        eprintln("skills-search requires a query")
+        return 1
+    }
+    let registry = SkillRegistry(config.serviceRoot)
+    for (skill in registry.search(query, limit: 8)) {
+        println("${skill.id}: ${skill.description}")
+        println(skill.preview)
+        println("")
+    }
+    return 0
+}
+
+func cmdExamples(config: AppConfig, _: Array<String>): Int64 {
+    for (project in listExampleProjects(config.serviceRoot)) {
+        println("${project.id}: ${project.description}")
+    }
+    return 0
+}
+
+func cmdBootstrapJsonParser(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let path = nonOptionAt(nonOptions, 1)
+    if (path.isEmpty()) {
+        eprintln("bootstrap-json-parser requires a target path")
+        return 1
+    }
+    println(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, path))
+    return 0
+}
+
+func cmdAnalyze(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let path = nonOptionAt(nonOptions, 1)
+    if (path.isEmpty()) {
+        eprintln("analyze requires a file path")
+        return 1
+    }
+    let result = analyzeCangjieFile(config.workspaceRoot, path)
+    println("[${result.engine}] ${result.summary}")
+    println(result.output)
+    return if (result.success) { 0 } else { 1 }
+}
+
+func cmdCreateFile(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let path = nonOptionAt(nonOptions, 1)
+    if (path.isEmpty()) {
+        eprintln("create-file requires a target path")
+        return 1
+    }
+    let content = nonOptionAt(nonOptions, 2)
+    println(workspaceCreateFileJson(config.workspaceRoot, path, content))
+    return 0
+}
+
+func cmdLspStatus(config: AppConfig, _: Array<String>): Int64 {
+    let status = inspectLspStatus(config.workspaceRoot)
+    println(status.summary)
+    if (!status.command.isEmpty()) {
+        println("command: ${status.command}")
+    }
+    println(status.sourceHint)
+    return if (status.available) { 0 } else { 1 }
+}
+
+func cmdLspProbe(config: AppConfig, _: Array<String>): Int64 {
+    let result = probeLspServer(config.workspaceRoot)
+    println(result.summary)
+    if (!result.command.isEmpty()) {
+        println("command: ${result.command}")
+    }
+    if (!result.responsePreview.trimAscii().isEmpty()) {
+        println(result.responsePreview)
+    }
+    return if (result.success) { 0 } else { 1 }
+}
+
+func cmdLspDocumentSymbols(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let path = nonOptionAt(nonOptions, 1)
+    if (path.isEmpty()) {
+        eprintln("lsp-document-symbols requires a file path")
+        return 1
+    }
+    return printLspQueryResult(queryLspDocumentSymbols(config.workspaceRoot, path))
+}
+
+func cmdLspWorkspaceSymbols(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let query = nonOptionAt(nonOptions, 1)
+    return printLspQueryResult(queryLspWorkspaceSymbols(config.workspaceRoot, query))
+}
+
+func cmdLspDefinition(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let path = nonOptionAt(nonOptions, 1)
+    let lineStr = nonOptionAt(nonOptions, 2)
+    let colStr = nonOptionAt(nonOptions, 3)
+    if (path.isEmpty() || lineStr.isEmpty() || colStr.isEmpty()) {
+        eprintln("lsp-definition requires path, line, and column")
+        return 1
+    }
+    return printLspQueryResult(queryLspDefinition(config.workspaceRoot,
+        path,
+        Int64.parse(lineStr),
+        Int64.parse(colStr)))
+}
+
+func cmdHelp(_: AppConfig, _: Array<String>): Int64 {
+    printUsage()
+    return 0
+}
+
+// 构建 CLI 子命令名到处理函数的注册表
+func buildSubcommandRegistry(): HashMap<String, CliSubcommandHandler> {
+    let registry = HashMap<String, CliSubcommandHandler>()
+    registry["serve"] = cmdServe
+    registry["mcp-stdio"] = cmdMcpStdio
+    registry["skills"] = cmdSkills
+    registry["skills-search"] = cmdSkillsSearch
+    registry["examples"] = cmdExamples
+    registry["bootstrap-json-parser"] = cmdBootstrapJsonParser
+    registry["analyze"] = cmdAnalyze
+    registry["create-file"] = cmdCreateFile
+    registry["lsp-status"] = cmdLspStatus
+    registry["lsp-probe"] = cmdLspProbe
+    registry["lsp-document-symbols"] = cmdLspDocumentSymbols
+    registry["lsp-workspace-symbols"] = cmdLspWorkspaceSymbols
+    registry["lsp-definition"] = cmdLspDefinition
+    registry["help"] = cmdHelp
+    return registry
+}
+
 main(args: Array<String>): Int64 {
     // 使用 std.argopt 统一管理全局选项，子命令通过 nonOptions 获取
     let specs: Array<ArgumentSpec> = [
@@ -115,133 +280,11 @@ main(args: Array<String>): Int64 {
 
     let config = buildAppConfig(options)
     let subcommand = nonOptions[0]
+    let subcommandRegistry = buildSubcommandRegistry()
 
-    match (subcommand) {
-        case "serve" =>
-            startServer(config)
-            return 0
-        case "mcp-stdio" =>
-            startMcpStdioServer(config)
-            return 0
-        case "skills" =>
-            let registry = SkillRegistry(config.serviceRoot)
-            for (skill in registry.list(limit: 200)) {
-                println("${skill.id}: ${skill.description}")
-            }
-            return 0
-        case "skills-search" =>
-            let query = nonOptionAt(nonOptions, 1)
-            if (query.isEmpty()) {
-                eprintln("skills-search requires a query")
-                return 1
-            }
-            let registry = SkillRegistry(config.serviceRoot)
-            for (skill in registry.search(query, limit: 8)) {
-                println("${skill.id}: ${skill.description}")
-                println(skill.preview)
-                println("")
-            }
-            return 0
-        case "examples" =>
-            for (project in listExampleProjects(config.serviceRoot)) {
-                println("${project.id}: ${project.description}")
-            }
-            return 0
-        case "bootstrap-json-parser" =>
-            let path = nonOptionAt(nonOptions, 1)
-            if (path.isEmpty()) {
-                eprintln("bootstrap-json-parser requires a target path")
-                return 1
-            }
-            println(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, path))
-            return 0
-        case "analyze" =>
-            let path = nonOptionAt(nonOptions, 1)
-            if (path.isEmpty()) {
-                eprintln("analyze requires a file path")
-                return 1
-            }
-            let result = analyzeCangjieFile(config.workspaceRoot, path)
-            println("[${result.engine}] ${result.summary}")
-            println(result.output)
-            return if (result.success) { 0 } else { 1 }
-        case "create-file" =>
-            let path = nonOptionAt(nonOptions, 1)
-            if (path.isEmpty()) {
-                eprintln("create-file requires a target path")
-                return 1
-            }
-            let content = nonOptionAt(nonOptions, 2)
-            println(workspaceCreateFileJson(config.workspaceRoot, path, content))
-            return 0
-        case "lsp-status" =>
-            let status = inspectLspStatus(config.workspaceRoot)
-            println(status.summary)
-            if (!status.command.isEmpty()) {
-                println("command: ${status.command}")
-            }
-            println(status.sourceHint)
-            return if (status.available) { 0 } else { 1 }
-        case "lsp-probe" =>
-            let result = probeLspServer(config.workspaceRoot)
-            println(result.summary)
-            if (!result.command.isEmpty()) {
-                println("command: ${result.command}")
-            }
-            if (!result.responsePreview.trimAscii().isEmpty()) {
-                println(result.responsePreview)
-            }
-            return if (result.success) { 0 } else { 1 }
-        case "lsp-document-symbols" =>
-            let path = nonOptionAt(nonOptions, 1)
-            if (path.isEmpty()) {
-                eprintln("lsp-document-symbols requires a file path")
-                return 1
-            }
-            let result = queryLspDocumentSymbols(config.workspaceRoot, path)
-            println(result.summary)
-            if (!result.command.isEmpty()) {
-                println("command: ${result.command}")
-            }
-            if (!result.responsePreview.trimAscii().isEmpty()) {
-                println(result.responsePreview)
-            }
-            return if (result.success) { 0 } else { 1 }
-        case "lsp-workspace-symbols" =>
-            let query = nonOptionAt(nonOptions, 1)
-            let result = queryLspWorkspaceSymbols(config.workspaceRoot, query)
-            println(result.summary)
-            if (!result.command.isEmpty()) {
-                println("command: ${result.command}")
-            }
-            if (!result.responsePreview.trimAscii().isEmpty()) {
-                println(result.responsePreview)
-            }
-            return if (result.success) { 0 } else { 1 }
-        case "lsp-definition" =>
-            let path = nonOptionAt(nonOptions, 1)
-            let lineStr = nonOptionAt(nonOptions, 2)
-            let colStr = nonOptionAt(nonOptions, 3)
-            if (path.isEmpty() || lineStr.isEmpty() || colStr.isEmpty()) {
-                eprintln("lsp-definition requires path, line, and column")
-                return 1
-            }
-            let result = queryLspDefinition(config.workspaceRoot,
-                path,
-                Int64.parse(lineStr),
-                Int64.parse(colStr))
-            println(result.summary)
-            if (!result.command.isEmpty()) {
-                println("command: ${result.command}")
-            }
-            if (!result.responsePreview.trimAscii().isEmpty()) {
-                println(result.responsePreview)
-            }
-            return if (result.success) { 0 } else { 1 }
-        case "help" =>
-            printUsage()
-            return 0
-        case _ =>
+    match (subcommandRegistry.get(subcommand)) {
+        case Some(handler) => return handler(config, nonOptions)
+        case None =>
             eprintln("Unknown subcommand: ${subcommand}")
             printUsage()
             return 1

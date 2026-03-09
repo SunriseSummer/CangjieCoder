@@ -1,122 +1,254 @@
 package cangjiecoder
 
+import std.collection.*
 import std.convert.*
 import std.env.*
 import stdx.encoding.json.*
 
-// MCP 工具调度 —— 根据工具名分发到对应的工作区/LSP/AST 处理函数
-func callMcpTool(workspaceRoot: String,
-                 serviceRoot: String,
-                 registry: SkillRegistry,
+// MCP 工具上下文 —— 每次 tools/call 携带的运行时环境
+struct McpToolContext {
+    public McpToolContext(let workspaceRoot: String,
+                          let serviceRoot: String,
+                          let registry: SkillRegistry) {}
+}
+
+// MCP 工具处理函数类型：接收上下文和参数，返回工具结果 JSON
+type McpToolHandler = (McpToolContext, JsonObject) -> String
+
+// 将 LSP 查询结果包装为标准工具结果，提取 success 字段自动判定是否成功
+func lspQueryToolResult(queryJson: String, okSummary: String, failSummary: String): String {
+    let result = parseJsonObject(queryJson)
+    let ok = jsonField(result, "success") == "true"
+    return toolResultJson(ok, if (ok) { okSummary } else { failSummary }, data: result)
+}
+
+// 各 MCP 工具的独立处理函数
+
+func handleSkillsSearch(ctx: McpToolContext, args: JsonObject): String {
+    let query = jsonField(args, "query")
+    let matches = ctx.registry.search(query, limit: 8)
+    let data = parseJsonObject(skillsJson(matches))
+    return toolResultJson(true, "Skills search completed", data: data)
+}
+
+func handleReadFile(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
+    let content = readTextFile(fullPath)
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+    data.put("content", JsonString(content))
+    data.put("bytes", JsonInt(content.toArray().size))
+    return toolResultJson(true, "Read workspace file", data: data)
+}
+
+func handleListFiles(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceListFilesJson(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        limit: parseJsonIntField(args, "limit", fallback: 200))
+}
+
+func handleSearchText(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceSearchTextJson(ctx.workspaceRoot,
+        jsonField(args, "query"),
+        jsonField(args, "path"),
+        limit: parseJsonIntField(args, "limit", fallback: 20))
+}
+
+func handleReplaceText(ctx: McpToolContext, args: JsonObject): String {
+    let message = replaceExactText(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        jsonField(args, "oldText"),
+        jsonField(args, "newText"))
+    let ok = message.startsWith("updated ")
+    return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
+}
+
+func handleCreateFile(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceCreateFileJson(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        jsonField(args, "content"),
+        overwrite: parseJsonBoolField(args, "overwrite", fallback: false))
+}
+
+func handleRunBuild(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
+}
+
+func handleRunTest(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["test"], jsonField(args, "path"))
+}
+
+func handleRunCommand(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot,
+        jsonField(args, "command"),
+        jsonStringArrayField(args, "args"),
+        jsonField(args, "path"))
+}
+
+func handleAnalyzeFile(ctx: McpToolContext, args: JsonObject): String {
+    let analysis = analyzeCangjieFile(ctx.workspaceRoot, jsonField(args, "path"))
+    let data = parseJsonObject(analysisJson(analysis))
+    return toolResultJson(analysis.success, analysis.summary, data: data)
+}
+
+func handleListExamples(ctx: McpToolContext, _: JsonObject): String {
+    let data = parseJsonObject(exampleProjectsJson(ctx.serviceRoot))
+    return toolResultJson(true, "Listed example projects", data: data)
+}
+
+func handleBootstrapJsonParser(ctx: McpToolContext, args: JsonObject): String {
+    let message = bootstrapJsonParserProject(ctx.serviceRoot, ctx.workspaceRoot, jsonField(args, "path"))
+    let ok = message.startsWith("Bootstrapped ")
+    return toolMessageJson(ok, if (ok) { "Bootstrapped JsonParser example" } else { "JsonParser bootstrap did not complete" }, message)
+}
+
+func handleLspStatus(ctx: McpToolContext, _: JsonObject): String {
+    let status = parseJsonObject(lspStatusJson(inspectLspStatus(ctx.workspaceRoot)))
+    return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
+}
+
+func handleLspProbe(ctx: McpToolContext, _: JsonObject): String {
+    return lspQueryToolResult(lspProbeJson(probeLspServer(ctx.workspaceRoot)),
+        "LSP probe succeeded", "LSP probe did not complete cleanly")
+}
+
+func handleLspDocumentSymbols(ctx: McpToolContext, args: JsonObject): String {
+    return lspQueryToolResult(
+        lspQueryJson(queryLspDocumentSymbols(ctx.workspaceRoot, jsonField(args, "path"))),
+        "LSP document symbols loaded", "LSP document symbol query failed")
+}
+
+func handleLspWorkspaceSymbols(ctx: McpToolContext, args: JsonObject): String {
+    return lspQueryToolResult(
+        lspQueryJson(queryLspWorkspaceSymbols(ctx.workspaceRoot, jsonField(args, "query"))),
+        "LSP workspace symbols loaded", "LSP workspace symbol query failed")
+}
+
+func handleLspDefinition(ctx: McpToolContext, args: JsonObject): String {
+    return lspQueryToolResult(
+        lspQueryJson(queryLspDefinition(ctx.workspaceRoot,
+            jsonField(args, "path"),
+            parseJsonIntField(args, "line", fallback: 0),
+            parseJsonIntField(args, "column", fallback: 0))),
+        "LSP definition loaded", "LSP definition query failed")
+}
+
+func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
+    let message = editAstNode(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        jsonField(args, "nodeType"),
+        jsonField(args, "replacement"),
+        index: parseJsonIntField(args, "index", fallback: 0))
+    let ok = astEditSucceeded(message)
+    return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
+}
+
+// 构建 MCP 工具名到处理函数的注册表
+func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
+    let registry = HashMap<String, McpToolHandler>()
+    registry["skills.search"] = handleSkillsSearch
+    registry["workspace.read_file"] = handleReadFile
+    registry["workspace.list_files"] = handleListFiles
+    registry["workspace.search_text"] = handleSearchText
+    registry["workspace.replace_text"] = handleReplaceText
+    registry["workspace.create_file"] = handleCreateFile
+    registry["workspace.run_build"] = handleRunBuild
+    registry["workspace.run_test"] = handleRunTest
+    registry["workspace.run_command"] = handleRunCommand
+    registry["cangjie.analyze_file"] = handleAnalyzeFile
+    registry["project.list_examples"] = handleListExamples
+    registry["project.bootstrap_json_parser"] = handleBootstrapJsonParser
+    registry["cangjie.lsp_status"] = handleLspStatus
+    registry["cangjie.lsp_probe"] = handleLspProbe
+    registry["cangjie.lsp_document_symbols"] = handleLspDocumentSymbols
+    registry["cangjie.lsp_workspace_symbols"] = handleLspWorkspaceSymbols
+    registry["cangjie.lsp_definition"] = handleLspDefinition
+    registry["cangjie.edit_ast_node"] = handleEditAstNode
+    return registry
+}
+
+// MCP 工具调度 —— 在注册表中查找工具名并调用对应处理函数
+func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
+                 ctx: McpToolContext,
                  toolName: String,
                  args: JsonObject): String {
     try {
-        match (toolName) {
-            case "skills.search" =>
-                let query = jsonField(args, "query")
-                let matches = registry.search(query, limit: 8)
-                let data = parseJsonObject(skillsJson(matches))
-                return toolResultJson(true, "Skills search completed", data: data)
-            case "workspace.read_file" =>
-                let path = jsonField(args, "path")
-                let fullPath = ensureWorkspacePath(workspaceRoot, path)
-                let content = readTextFile(fullPath)
-                let data = JsonObject()
-                data.put("path", JsonString(workspaceRelativePath(workspaceRoot, fullPath)))
-                data.put("content", JsonString(content))
-                data.put("bytes", JsonInt(content.toArray().size))
-                return toolResultJson(true, "Read workspace file", data: data)
-            case "workspace.list_files" =>
-                return workspaceListFilesJson(workspaceRoot,
-                    jsonField(args, "path"),
-                    limit: parseJsonIntField(args, "limit", fallback: 200))
-            case "workspace.search_text" =>
-                return workspaceSearchTextJson(workspaceRoot,
-                    jsonField(args, "query"),
-                    jsonField(args, "path"),
-                    limit: parseJsonIntField(args, "limit", fallback: 20))
-            case "workspace.replace_text" =>
-                let path = jsonField(args, "path")
-                let oldText = jsonField(args, "oldText")
-                let newText = jsonField(args, "newText")
-                let message = replaceExactText(workspaceRoot, path, oldText, newText)
-                let ok = message.startsWith("updated ")
-                return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
-            case "workspace.create_file" =>
-                return workspaceCreateFileJson(workspaceRoot,
-                    jsonField(args, "path"),
-                    jsonField(args, "content"),
-                    overwrite: parseJsonBoolField(args, "overwrite", fallback: false))
-            case "workspace.run_build" =>
-                return workspaceRunCommandJson(workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
-            case "workspace.run_test" =>
-                return workspaceRunCommandJson(workspaceRoot, "cjpm", ["test"], jsonField(args, "path"))
-            case "workspace.run_command" =>
-                return workspaceRunCommandJson(workspaceRoot,
-                    jsonField(args, "command"),
-                    jsonStringArrayField(args, "args"),
-                    jsonField(args, "path"))
-            case "cangjie.analyze_file" =>
-                let path = jsonField(args, "path")
-                let analysis = analyzeCangjieFile(workspaceRoot, path)
-                let data = parseJsonObject(analysisJson(analysis))
-                return toolResultJson(analysis.success, analysis.summary, data: data)
-            case "project.list_examples" =>
-                let data = parseJsonObject(exampleProjectsJson(serviceRoot))
-                return toolResultJson(true, "Listed example projects", data: data)
-            case "project.bootstrap_json_parser" =>
-                let path = jsonField(args, "path")
-                let message = bootstrapJsonParserProject(serviceRoot, workspaceRoot, path)
-                let ok = message.startsWith("Bootstrapped ")
-                return toolMessageJson(ok, if (ok) { "Bootstrapped JsonParser example" } else { "JsonParser bootstrap did not complete" }, message)
-            case "cangjie.lsp_status" =>
-                let status = parseJsonObject(lspStatusJson(inspectLspStatus(workspaceRoot)))
-                return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
-            case "cangjie.lsp_probe" =>
-                let result = parseJsonObject(lspProbeJson(probeLspServer(workspaceRoot)))
-                let ok = jsonField(result, "success") == "true"
-                return toolResultJson(ok, if (ok) { "LSP probe succeeded" } else { "LSP probe did not complete cleanly" }, data: result)
-            case "cangjie.lsp_document_symbols" =>
-                let result = parseJsonObject(lspQueryJson(queryLspDocumentSymbols(workspaceRoot, jsonField(args, "path"))))
-                let ok = jsonField(result, "success") == "true"
-                return toolResultJson(ok, if (ok) { "LSP document symbols loaded" } else { "LSP document symbol query failed" }, data: result)
-            case "cangjie.lsp_workspace_symbols" =>
-                let result = parseJsonObject(lspQueryJson(queryLspWorkspaceSymbols(workspaceRoot, jsonField(args, "query"))))
-                let ok = jsonField(result, "success") == "true"
-                return toolResultJson(ok, if (ok) { "LSP workspace symbols loaded" } else { "LSP workspace symbol query failed" }, data: result)
-            case "cangjie.lsp_definition" =>
-                let result = parseJsonObject(lspQueryJson(queryLspDefinition(workspaceRoot,
-                    jsonField(args, "path"),
-                    parseJsonIntField(args, "line", fallback: 0),
-                    parseJsonIntField(args, "column", fallback: 0))))
-                let ok = jsonField(result, "success") == "true"
-                return toolResultJson(ok, if (ok) { "LSP definition loaded" } else { "LSP definition query failed" }, data: result)
-            case "cangjie.edit_ast_node" =>
-                let path = jsonField(args, "path")
-                let nodeType = jsonField(args, "nodeType")
-                let replacement = jsonField(args, "replacement")
-                let index = parseJsonIntField(args, "index", fallback: 0)
-                let message = editAstNode(workspaceRoot, path, nodeType, replacement, index: index)
-                let ok = astEditSucceeded(message)
-                return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
-            case _ =>
-                return toolMessageJson(false, "Unknown MCP tool", "Unknown tool: ${toolName}")
+        match (toolRegistry.get(toolName)) {
+            case Some(handler) => return handler(ctx, args)
+            case None => return toolMessageJson(false, "Unknown MCP tool", "Unknown tool: ${toolName}")
         }
     } catch (e: Exception) {
         return toolMessageJson(false, "MCP tool execution failed", shortPreview(e.toString(), maxLines: 12))
     }
 }
 
+// MCP JSON-RPC 方法处理函数类型
+type McpMethodHandler = (McpRuntime, String, JsonObject) -> String
+
+// 各 MCP 协议方法的独立处理函数
+
+func handleInitialize(_: McpRuntime, idJson: String, _: JsonObject): String {
+    let result = JsonObject()
+    let capabilities = JsonObject()
+    capabilities.put("tools", JsonObject())
+    capabilities.put("prompts", JsonObject())
+    capabilities.put("resources", JsonObject())
+    result.put("capabilities", capabilities)
+    let serverInfo = JsonObject()
+    serverInfo.put("name", JsonString("CangjieCoder"))
+    serverInfo.put("version", JsonString(APP_VERSION))
+    result.put("serverInfo", serverInfo)
+    return jsonRpcResult(idJson, result.toString())
+}
+
+func handlePing(_: McpRuntime, idJson: String, _: JsonObject): String {
+    return jsonRpcResult(idJson, "{\"pong\":true}")
+}
+
+func handleNotificationsInitialized(_: McpRuntime, idJson: String, _: JsonObject): String {
+    return jsonRpcResult(idJson, "null")
+}
+
+func handleToolsList(_: McpRuntime, idJson: String, _: JsonObject): String {
+    return jsonRpcResult(idJson, toolDefinitionsJson())
+}
+
+func handleToolsCall(runtime: McpRuntime, idJson: String, params: JsonObject): String {
+    let toolName = jsonField(params, "name")
+    let toolArgs = match (params.get("arguments")) {
+        case Some(value) => value.asObject()
+        case None => JsonObject()
+    }
+    let ctx = McpToolContext(runtime.workspaceRoot, runtime.serviceRoot, runtime.registry)
+    return jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(runtime.toolRegistry, ctx, toolName, toolArgs)))
+}
+
+// 构建 MCP JSON-RPC 方法名到处理函数的注册表
+func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
+    let registry = HashMap<String, McpMethodHandler>()
+    registry["initialize"] = handleInitialize
+    registry["ping"] = handlePing
+    registry["notifications/initialized"] = handleNotificationsInitialized
+    registry["tools/list"] = handleToolsList
+    registry["tools/call"] = handleToolsCall
+    return registry
+}
+
 // McpRuntime 封装 MCP 协议的请求处理，被 stdio 和 HTTP 入口共用
 class McpRuntime {
-    let workspaceRoot: String
-    let serviceRoot: String
-    let registry: SkillRegistry
+    public let workspaceRoot: String
+    public let serviceRoot: String
+    public let registry: SkillRegistry
+    let methodRegistry: HashMap<String, McpMethodHandler>
+    let toolRegistry: HashMap<String, McpToolHandler>
 
     public init(workspaceRoot: String, serviceRoot!: String = "") {
         this.workspaceRoot = workspaceRoot
         this.serviceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
         this.registry = SkillRegistry(this.serviceRoot)
+        this.methodRegistry = buildMcpMethodRegistry()
+        this.toolRegistry = buildMcpToolRegistry()
     }
 
     // 处理单条 MCP JSON-RPC 请求，返回 None 表示通知类消息无需回复
@@ -137,38 +269,9 @@ class McpRuntime {
                 return None
             }
 
-            match (method) {
-                case "initialize" =>
-                    let result = JsonObject()
-                    let capabilities = JsonObject()
-                    capabilities.put("tools", JsonObject())
-                    capabilities.put("prompts", JsonObject())
-                    capabilities.put("resources", JsonObject())
-                    result.put("capabilities", capabilities)
-                    let serverInfo = JsonObject()
-                    serverInfo.put("name", JsonString("CangjieCoder"))
-                    serverInfo.put("version", JsonString(APP_VERSION))
-                    result.put("serverInfo", serverInfo)
-                    return Some(jsonRpcResult(idJson, result.toString()))
-                case "ping" =>
-                    return Some(jsonRpcResult(idJson, "{\"pong\":true}"))
-                case "notifications/initialized" =>
-                    return Some(jsonRpcResult(idJson, "null"))
-                case "tools/list" =>
-                    return Some(jsonRpcResult(idJson, toolDefinitionsJson()))
-                case "tools/call" =>
-                    let toolName = jsonField(params, "name")
-                    let toolArgs = match (params.get("arguments")) {
-                        case Some(value) => value.asObject()
-                        case None => JsonObject()
-                    }
-                    return Some(jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(workspaceRoot,
-                        serviceRoot,
-                        registry,
-                        toolName,
-                        toolArgs))))
-                case _ =>
-                    return Some(jsonRpcError(idJson, -32601, "Unsupported MCP method: ${method}"))
+            match (methodRegistry.get(method)) {
+                case Some(handler) => return Some(handler(this, idJson, params))
+                case None => return Some(jsonRpcError(idJson, -32601, "Unsupported MCP method: ${method}"))
             }
         } catch (e: Exception) {
             return Some(jsonRpcError("null", -32700, "Failed to parse MCP request: ${shortPreview(e.toString(), maxLines: 4)}"))

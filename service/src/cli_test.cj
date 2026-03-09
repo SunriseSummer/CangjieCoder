@@ -1,7 +1,6 @@
 package cangjiecoder
 
 import std.collection.*
-import std.env.*
 
 @Test
 class CliArgoptTest {
