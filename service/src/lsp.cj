@@ -40,10 +40,21 @@ struct LspQueryResult {
                           let resultJson: String) {}
 }
 
-// 按优先级尝试发现可用的 LSP 命令：环境变量 → SDK 自带 → PATH 搜索
+// 缓存已解析的 LSP 命令路径，避免每次查询都重复探测文件系统和 PATH。
+// 使用 (repoRoot, command) 对存储，不同工作区可能对应不同的 LSP 二进制。
+var lspCommandCache = HashMap<String, String>()
+
+// 按优先级尝试发现可用的 LSP 命令：缓存 → 环境变量 → SDK 自带 → PATH 搜索
 func resolveLspCommand(repoRoot: String): ?String {
+    // 先检查缓存，避免重复的文件系统探测和子进程调用
+    match (lspCommandCache.get(repoRoot)) {
+        case Some(cached) => return cached
+        case None => ()
+    }
+
     let configuredLspCommand = (getVariable("CANGJIE_LSP_COMMAND") ?? "").trimAscii()
     if (!configuredLspCommand.isEmpty()) {
+        lspCommandCache[repoRoot] = configuredLspCommand
         return configuredLspCommand
     }
 
@@ -51,6 +62,7 @@ func resolveLspCommand(repoRoot: String): ?String {
     if (!sdkHome.isEmpty()) {
         let bundledLspPath = "${sdkHome}/tools/bin/LSPServer"
         if (exists(bundledLspPath)) {
+            lspCommandCache[repoRoot] = bundledLspPath
             return bundledLspPath
         }
     }
@@ -59,10 +71,16 @@ func resolveLspCommand(repoRoot: String): ?String {
     if (ok) {
         let resolved = stdout.trimAscii()
         if (!resolved.isEmpty()) {
+            lspCommandCache[repoRoot] = resolved
             return resolved
         }
     }
     return None
+}
+
+// 清除 LSP 命令缓存，在环境变量变更或测试场景下使用
+func clearLspCommandCache(): Unit {
+    lspCommandCache = HashMap<String, String>()
 }
 
 func inspectLspStatus(repoRoot: String): LspStatus {

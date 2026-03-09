@@ -162,6 +162,10 @@ func workspaceCreateFileJson(repoRoot: String,
             "Workspace file creation rejected",
             "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
     }
+    // 覆写前自动备份原始内容，支持事务回滚
+    if (existedBefore && overwrite) {
+        globalBackupStore.backup(fullPath)
+    }
     writeTextFile(fullPath, content)
     let data = JsonObject()
     data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))

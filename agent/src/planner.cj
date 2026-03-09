@@ -23,18 +23,80 @@ func extractJsonObjectText(text: String): String {
         }
     }
 
-    let start = match (text.indexOf("{")) {
-        case Some(value) => value
-        case None => return ""
-    }
-    // provider 可能会在 JSON 外层包一段解释文字，
-    // 这里退而求其次地截取“首个左花括号到最后一个可达右花括号”。
-    var end: Int64 = text.size - 1
-    while (end >= start) {
-        if (text[end..end + 1] == "}") {
-            return text[start..end + 1]
+    // 使用花括号深度计数定位完整的 JSON 对象边界，
+    // 正确处理嵌套对象、字符串内的花括号和转义序列。
+    let candidates = ArrayList<String>()
+    var scanIndex: Int64 = 0
+    while (scanIndex < text.size) {
+        if (text[scanIndex..scanIndex + 1] != "{") {
+            scanIndex += 1
+            continue
         }
-        end -= 1
+        let objStart = scanIndex
+        var depth: Int64 = 0
+        var inString = false
+        var escaped = false
+        var pos = objStart
+        while (pos < text.size) {
+            let ch = text[pos..pos + 1]
+            if (escaped) {
+                escaped = false
+                pos += 1
+                continue
+            }
+            if (ch == "\\") {
+                escaped = true
+                pos += 1
+                continue
+            }
+            if (ch == "\"") {
+                inString = !inString
+                pos += 1
+                continue
+            }
+            if (!inString) {
+                if (ch == "{") {
+                    depth += 1
+                } else if (ch == "}") {
+                    depth -= 1
+                    if (depth == 0) {
+                        candidates.add(text[objStart..pos + 1])
+                        break
+                    }
+                }
+            }
+            pos += 1
+        }
+        scanIndex = objStart + 1
+    }
+
+    // 逐个尝试解析候选 JSON，优先返回包含 steps/summary 字段的规划对象
+    for (candidate in candidates) {
+        try {
+            let root = JsonValue.fromStr(candidate).asObject()
+            let hasSteps = match (root.get("steps")) {
+                case Some(_) => true
+                case None => false
+            }
+            let hasSummary = match (root.get("summary")) {
+                case Some(_) => true
+                case None => false
+            }
+            if (hasSteps || hasSummary) {
+                return candidate
+            }
+        } catch (e: Exception) {
+            continue
+        }
+    }
+    // 没有 steps/summary 字段时退化到第一个合法 JSON 对象
+    for (candidate in candidates) {
+        try {
+            JsonValue.fromStr(candidate)
+            return candidate
+        } catch (e: Exception) {
+            continue
+        }
     }
     return ""
 }
@@ -108,6 +170,60 @@ func extractWorkspaceFiles(snapshot: String): Array<String> {
         case None =>
             return []
     }
+}
+
+// 将完整工作区快照压缩为紧凑摘要，只保留文件计数、关键文件和顶层目录结构，
+// 避免每轮提示词中灌入全量文件列表浪费 token 预算和干扰模型注意力。
+func buildCompactWorkspaceSummary(snapshot: String): String {
+    let snapshotRoot = parseJsonObject(snapshot)
+    let data = extractStructuredData(snapshotRoot)
+    let count = jsonField(data, "count", fallback: "0")
+    let files = extractWorkspaceFiles(snapshot)
+
+    // 只保留配置、入口、README 等关键文件
+    let keyFiles = ArrayList<String>()
+    for (file in files) {
+        if (file.endsWith("cjpm.toml") || file.endsWith("README.md") ||
+            file == "src/main.cj" || file.endsWith("/main.cj")) {
+            keyFiles.add(file)
+        }
+    }
+
+    let summary = ArrayList<String>()
+    summary.add("Workspace: ${count} files total")
+    if (!keyFiles.isEmpty()) {
+        summary.add("Key files: ${String.join(keyFiles.toArray(), delimiter: ", ")}")
+    }
+
+    // 提取顶层目录结构
+    let dirs = HashSet<String>()
+    for (file in files) {
+        match (file.indexOf("/")) {
+            case Some(slashIndex) =>
+                dirs.add(file[0..slashIndex])
+            case None => ()
+        }
+    }
+    if (!dirs.isEmpty()) {
+        let dirList = ArrayList<String>()
+        for (d in dirs) {
+            dirList.add(d)
+        }
+        summary.add("Top-level dirs: ${String.join(dirList.toArray(), delimiter: ", ")}")
+    }
+
+    // 列出 .cj 源码文件路径，帮助模型精准定位编辑对象
+    let sourceFiles = ArrayList<String>()
+    for (file in files) {
+        if (file.endsWith(".cj") && !file.contains("_test.cj")) {
+            sourceFiles.add(file)
+        }
+    }
+    if (!sourceFiles.isEmpty()) {
+        summary.add("Source files: ${String.join(sourceFiles.toArray(), delimiter: ", ")}")
+    }
+
+    return String.join(summary.toArray(), delimiter: "\n")
 }
 
 func normalizePlanSteps(steps: Array<PlannedToolCall>, allowedTools: Array<String>): Array<PlannedToolCall> {
@@ -319,6 +435,8 @@ func parsePlan(reply: String, context: AgentPlanningContext): AgentPlan {
 func buildPlanPrompt(context: AgentPlanningContext): String {
     // 在提示词中显式注入上限，帮助模型把计划控制在可执行范围内，
     // 同时保留完成一次标准开发闭环所需的步骤数量。
+    // 使用紧凑的工作区摘要代替全量快照，节省 token 预算。
+    let workspaceSummary = buildCompactWorkspaceSummary(context.workspaceSnapshot)
     return """
 You are the single-agent planner for CangjieCoder.
 
@@ -328,8 +446,8 @@ ${context.userPrompt}
 Available MCP tools (JSON):
 ${context.toolsJson}
 
-Workspace snapshot (JSON):
-${context.workspaceSnapshot}
+Workspace overview:
+${workspaceSummary}
 
 Built-in example projects (JSON):
 ${context.exampleProjectsJson}
@@ -353,6 +471,7 @@ Rules:
 - prefer reading configuration/docs or analyzing code before destructive changes
 - include workspace.run_build / workspace.run_test when they are clearly needed
 - do not wrap the JSON in markdown
+- use workspace.list_files or workspace.read_file to explore the workspace when needed
 """
 }
 
@@ -378,8 +497,9 @@ func buildReplanPrompt(userPrompt: String,
         }
     }
 
-    // Replan prompts feed the model only compact summaries so later rounds stay
-    // grounded in prior observations without replaying entire tool payloads.
+    // Replan 提示词使用紧凑的工作区摘要代替全量快照，
+    // 在后续轮次保持上下文精简，帮助模型聚焦于增量动作。
+    let workspaceSummary = buildCompactWorkspaceSummary(context.workspaceSnapshot)
     return """
 You are continuing a CangjieCoder agent run using a reflect-plan-act-review loop.
 
@@ -392,8 +512,8 @@ ${String.join(planLines.toArray(), delimiter: "\n")}
 Observed tool executions:
 ${String.join(executionLines.toArray(), delimiter: "\n")}
 
-Current workspace snapshot (JSON):
-${context.workspaceSnapshot}
+Current workspace overview:
+${workspaceSummary}
 
 Available MCP tools (JSON):
 ${context.toolsJson}
@@ -407,5 +527,6 @@ Rules:
 - choose at most ${MAX_PLAN_STEPS} steps
 - use only tool names from the provided tool list
 - do not wrap the JSON in markdown
+- use workspace.list_files or workspace.read_file to explore when needed
 """
 }

@@ -78,7 +78,8 @@ func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),
             ToolArgSpec("replacement", "string", "Replacement source text.", true),
             ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
-        ])
+        ]),
+        ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", [])
     ]
 }
 

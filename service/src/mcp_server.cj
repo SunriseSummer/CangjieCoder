@@ -135,6 +135,13 @@ func handleLspDefinition(ctx: McpToolContext, args: JsonObject): String {
 }
 
 func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
+    // AST 编辑前尝试备份原始文件，支持事务回滚
+    try {
+        let fullPath = ensureWorkspacePath(ctx.workspaceRoot, jsonField(args, "path"))
+        globalBackupStore.backup(fullPath)
+    } catch (e: Exception) {
+        // 路径无效时跳过备份，让 editAstNode 处理错误
+    }
     let message = editAstNode(ctx.workspaceRoot,
         jsonField(args, "path"),
         jsonField(args, "nodeType"),
@@ -142,6 +149,22 @@ func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
         index: parseJsonIntField(args, "index", fallback: 0))
     let ok = astEditSucceeded(message)
     return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
+}
+
+// 回滚所有被修改的文件到备份状态
+func handleRollback(ctx: McpToolContext, _: JsonObject): String {
+    if (!globalBackupStore.hasBackups()) {
+        return toolMessageJson(true, "No file modifications to roll back", "No backups exist")
+    }
+    let restored = globalBackupStore.rollbackAll()
+    let data = JsonObject()
+    let restoredArray = JsonArray()
+    for (path in restored) {
+        restoredArray.add(JsonString(workspaceRelativePath(ctx.workspaceRoot, path)))
+    }
+    data.put("restoredFiles", restoredArray)
+    data.put("count", JsonInt(restored.size))
+    return toolResultJson(true, "Rolled back ${restored.size} file(s) to pre-edit state", data: data)
 }
 
 // 构建 MCP 工具名到处理函数的注册表
@@ -165,6 +188,7 @@ func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["cangjie.lsp_workspace_symbols"] = handleLspWorkspaceSymbols
     registry["cangjie.lsp_definition"] = handleLspDefinition
     registry["cangjie.edit_ast_node"] = handleEditAstNode
+    registry["workspace.rollback"] = handleRollback
     return registry
 }
 

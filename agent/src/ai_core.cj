@@ -1,7 +1,9 @@
 package cangjiecoderagent
 
 import std.collection.*
+import std.convert.*
 import std.env.*
+import std.fs.*
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
@@ -9,6 +11,19 @@ import stdx.net.tls.*
 
 // 保留有限的最近对话，既能给规划/总结补上下文，也避免会话无限膨胀。
 const CONVERSATION_TURN_LIMIT: Int64 = 12
+
+// Token 预算：粗略估算上下文 token 用量，避免超出模型窗口。
+// 该值远小于主流模型实际窗口（32k–128k），留足空间给系统提示词和工具描述。
+const TOKEN_BUDGET: Int64 = 8000
+
+// 粗略估算文本的 token 数量。
+// 英文约每 4 字符 1 token，中文约每 2 字符 1 token；取 bytes/3 作为折中近似。
+func estimateTokenCount(text: String): Int64 {
+    if (text.isEmpty()) {
+        return 0
+    }
+    return (text.toArray().size + 2) / 3
+}
 
 struct ConversationTurn {
     public ConversationTurn(let role: String, let content: String) {}
@@ -35,7 +50,25 @@ class ConversationSession {
             return
         }
         turns.add(ConversationTurn(role, content))
+        // 基于 token 预算进行智能截断，而非简单按轮次截断。
+        // 优先淘汰最早的对话，保留最近交互的完整上下文。
+        trimToTokenBudget()
+    }
+
+    // 按 token 预算淘汰最旧的对话轮次，直到总量降至安全阈值内。
+    // 保持 CONVERSATION_TURN_LIMIT 作为硬上限兜底。
+    func trimToTokenBudget(): Unit {
         while (turns.size > CONVERSATION_TURN_LIMIT) {
+            turns.remove(at: 0)
+        }
+        while (turns.size > 1) {
+            var total: Int64 = 0
+            for (turn in turns) {
+                total += estimateTokenCount(turn.content)
+            }
+            if (total <= TOKEN_BUDGET) {
+                break
+            }
             turns.remove(at: 0)
         }
     }
@@ -87,6 +120,70 @@ class ConversationStore {
                 let created = ConversationSession(normalized)
                 sessions[normalized] = created
                 return created
+        }
+    }
+
+    // 将所有会话状态序列化为 JSON 并写入文件，支持崩溃后恢复。
+    public func saveToFile(path: String): Unit {
+        let root = JsonObject()
+        root.put("nextSessionId", JsonInt(nextSessionId))
+        let sessionsJson = JsonObject()
+        for ((id, session) in sessions) {
+            let turnsJson = JsonArray()
+            for (turn in session.history(limit: CONVERSATION_TURN_LIMIT)) {
+                let turnJson = JsonObject()
+                turnJson.put("role", JsonString(turn.role))
+                turnJson.put("content", JsonString(turn.content))
+                turnsJson.add(turnJson)
+            }
+            sessionsJson.put(id, turnsJson)
+        }
+        root.put("sessions", sessionsJson)
+        let parentDir = Path(path).parent.toString()
+        if (!parentDir.isEmpty() && !exists(parentDir)) {
+            Directory.create(parentDir, recursive: true)
+        }
+        File.writeTo(path, root.toString().toArray())
+    }
+
+    // 从 JSON 文件加载会话状态，恢复中断的任务上下文。
+    public func loadFromFile(path: String): Unit {
+        if (!exists(path)) {
+            return
+        }
+        try {
+            let content = String.fromUtf8(File.readFrom(path))
+            let root = JsonValue.fromStr(content).asObject()
+            let nextId = match (root.get("nextSessionId")) {
+                case Some(value) => Int64.parse(value.toString())
+                case None => nextSessionId
+            }
+            nextSessionId = nextId
+            match (root.get("sessions")) {
+                case Some(sessionsValue) =>
+                    let sessionsObj = sessionsValue.asObject()
+                    let fields = sessionsObj.getFields()
+                    for ((id, turnsValue) in fields) {
+                        let session = ConversationSession(id)
+                        let turnsArr = turnsValue.asArray()
+                        var index: Int64 = 0
+                        while (index < turnsArr.size()) {
+                            match (turnsArr.get(index)) {
+                                case Some(turnValue) =>
+                                    let turnObj = turnValue.asObject()
+                                    let role = jsonField(turnObj, "role")
+                                    let turnContent = jsonField(turnObj, "content")
+                                    session.addTurn(role, turnContent)
+                                case None => ()
+                            }
+                            index += 1
+                        }
+                        sessions[id] = session
+                    }
+                case None => ()
+            }
+        } catch (e: Exception) {
+            // 文件损坏时静默忽略，从空状态重新开始
         }
     }
 }
