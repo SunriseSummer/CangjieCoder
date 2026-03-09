@@ -316,16 +316,12 @@ func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
     } catch (e: Exception) {
         // 路径无效时跳过备份，让 editAstNode 处理错误
     }
-    let message = ctx.ops.editAstNodeJson(ctx.workspaceRoot,
+    // editAstNodeJson 已在桥接层完成成功判定和结果格式化
+    return ctx.ops.editAstNodeJson(ctx.workspaceRoot,
         mcpJsonField(args, "path"),
         mcpJsonField(args, "nodeType"),
         mcpJsonField(args, "replacement"),
         mcpParseJsonIntField(args, "index", fallback: 0))
-    let ok = !message.startsWith("tree-sitter unavailable") &&
-        !message.contains("No AST node matched") &&
-        !message.contains("Path does not exist") &&
-        !message.contains("escapes repository root")
-    return mcpToolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
 }
 
 // 回滚所有被修改的文件到备份状态

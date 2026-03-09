@@ -187,6 +187,17 @@ LSP 连接经历了两个阶段：
 | `prompts.cj` | buildPlanPrompt、buildReplanPrompt、buildCompactWorkspaceSummary — 提示词构建 |
 | `planning.cj` | parsePlan、buildFallbackPlan、normalizePlanSteps — 计划解析与回退逻辑 |
 
+### 5.4 MCP 子包（`cangjiecoder.mcp`）
+
+将原 `service/src/mcp_server.cj` 和 `service/src/mcp_protocol.cj` 拆分为 `service/src/mcp/` 子包：
+
+| 文件 | 职责 |
+|------|------|
+| `protocol.cj` | ToolArgSpec/ToolDefinition 类型、buildToolDefinitions 工具定义、toolDefinitionsJson 序列化、JSON-RPC 响应构建（jsonRpcResult/jsonRpcError）、mcpToolCallResultJson |
+| `server.cj` | McpToolContext/McpWorkspaceOps/McpToolHandler 类型定义、各工具处理函数（handleReadFile 等）、工具/方法注册表、McpRuntime 请求处理、stdio 帧编解码与 stdio 服务入口 |
+
+**桥接模式**：由于仓颉 cjpm 子包不能导入父包，MCP 子包通过 `McpWorkspaceOps` 结构体持有函数引用，由根包 `mcp_bridge.cj` 在创建 `McpRuntime` 时注入闭包实现。这种"函数引用桥接"方式让子包可以调用根包的域函数（`replaceExactText`、`workspaceListFilesJson`、LSP 查询等）而不产生循环依赖。
+
 ## 六、文件变更清单
 
 | 文件 | 变更类型 | 说明 |
@@ -205,8 +216,10 @@ LSP 连接经历了两个阶段：
 | `service/src/lsp/protocol.cj` | 新增 | LSP 协议层（从 lsp.cj 拆出） |
 | `service/src/lsp/session.cj` | 新增 | LSP 会话管理（从 lsp.cj 拆出） |
 | `service/src/lsp/queries.cj` | 新增 | LSP 查询接口（从 lsp.cj 拆出） |
-| `service/src/mcp_protocol.cj` | 修改 | workspace.rollback 工具定义 |
-| `service/src/mcp_server.cj` | 修改 | handleRollback 处理器 |
+| `service/src/mcp/protocol.cj` | 新增 | MCP 协议定义（从 mcp_protocol.cj 迁入子包） |
+| `service/src/mcp/server.cj` | 新增 | MCP 工具处理、运行时、stdio 服务（从 mcp_server.cj 迁入子包） |
+| `service/src/mcp_bridge.cj` | 新增 | MCP 子包与根包的函数引用桥接层 |
+| `service/src/json_helpers.cj` | 修改 | 移除已迁入 MCP 子包的 JSON-RPC 辅助函数 |
 | `service/src/workspace_tools.cj` | 修改 | 自动备份集成 |
 | `service/src/skills_test.cj` | 修改 | 备份回滚和 LSP 缓存测试 |
 | `service/src/server_test.cj` | 修改 | MCP 回滚工具集成测试 |

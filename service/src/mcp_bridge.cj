@@ -40,7 +40,9 @@ func buildWorkspaceOps(serviceRoot: String): McpWorkspaceOps {
             toolResultJson(true, "Skills search completed", data: data)
         },
         { repoRoot: String, path: String, nodeType: String, replacement: String, index: Int64 =>
-            editAstNode(repoRoot, path, nodeType, replacement, index: index)
+            let message = editAstNode(repoRoot, path, nodeType, replacement, index: index)
+            let ok = astEditSucceeded(message)
+            toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
         },
         { repoRoot: String =>
             lspStatusJson(inspectLspStatus(repoRoot))
