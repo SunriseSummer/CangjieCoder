@@ -100,6 +100,7 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
     }
 
     let startPath = resolveWorkspaceCommandDirectory(repoRoot, path)
+    // -R: 递归搜索; -n: 显示行号; -I: 跳过二进制文件; -F: 固定字符串匹配
     let arguments = ["-R", "-n", "-I", "-F", query, startPath]
     let (status, stdout, stderr) = runCommandDetailedOutput("grep", arguments, repoRoot)
     if (status != 0 && status != 1) {
