@@ -10,6 +10,9 @@ import stdx.encoding.json.*
 
 const LSP_HEADER_DELIMITER: String = "\r\n\r\n"
 const LSP_CONTENT_LENGTH_HEADER: String = "Content-Length:"
+const JSON_NULL_LITERAL: String = "null"
+const JSON_EMPTY_ARRAY_LITERAL: String = "[]"
+const JSON_EMPTY_OBJECT_LITERAL: String = "{}"
 
 struct ExampleProjectSpec {
     public ExampleProjectSpec(let id: String,
@@ -230,7 +233,7 @@ func buildDidOpenNotification(path: String): String {
     return buildLspNotification("textDocument/didOpen", params)
 }
 
-func lspResultJsonValue(text: String): JsonValue {
+func lspResultToJsonValue(text: String): JsonValue {
     if (text.trimAscii().isEmpty()) {
         return JsonNull()
     }
@@ -247,7 +250,7 @@ func runLspRequest(repoRoot: String,
                    setupNotifications!: Array<String> = []): LspQueryResult {
     match (resolveLspCommand(repoRoot)) {
         case None =>
-            return LspQueryResult(false, false, "", method, "No Cangjie LSP binary was detected for this request.", "", "null")
+            return LspQueryResult(false, false, "", method, "No Cangjie LSP binary was detected for this request.", "", JSON_NULL_LITERAL)
         case Some(command) =>
             try {
                 let process = launch(command,
@@ -312,7 +315,9 @@ func runLspRequest(repoRoot: String,
                         }
                         if (let Some(resultValue) <- response.get("result")) {
                             let resultText = resultValue.toString()
-                            let summary = if (resultText == "null" || resultText == "[]" || resultText == "{}") {
+                            let summary = if (resultText == JSON_NULL_LITERAL ||
+                                resultText == JSON_EMPTY_ARRAY_LITERAL ||
+                                resultText == JSON_EMPTY_OBJECT_LITERAL) {
                                 "LSP request succeeded, but the server returned no symbol payload."
                             } else {
                                 "LSP request succeeded."
@@ -335,7 +340,7 @@ func runLspRequest(repoRoot: String,
                     method,
                     "LSP request produced no parseable response for the requested method.",
                     shortPreview(if (stderr.trimAscii().isEmpty()) { stdout } else { stderr }, maxLines: 12),
-                    "null")
+                    JSON_NULL_LITERAL)
             } catch (e: Exception) {
                 return LspQueryResult(true,
                     false,
@@ -343,7 +348,7 @@ func runLspRequest(repoRoot: String,
                     method,
                     "LSP request failed.",
                     shortPreview(e.toString(), maxLines: 12),
-                    "null")
+                    JSON_NULL_LITERAL)
             }
     }
 }

@@ -65,7 +65,7 @@ class ServerMcpTest {
         let ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}"
         let toolsList = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
         let payload = "${encodeMcpFrame(ping)}${encodeMcpFrame(toolsList)}"
-        let bodies = extractMcpBodies(payload)
+        let bodies = extractLspBodies(payload)
         @Expect(bodies.size == 2)
         @Expect(bodies[0].contains("\"method\":\"ping\""))
         @Expect(bodies[1].contains("\"method\":\"tools/list\""))

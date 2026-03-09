@@ -139,7 +139,7 @@ func lspQueryJson(result: LspQueryResult): String {
     root.put("method", JsonString(result.method))
     root.put("summary", JsonString(result.summary))
     root.put("responsePreview", JsonString(result.responsePreview))
-    root.put("result", lspResultJsonValue(result.resultJson))
+    root.put("result", lspResultToJsonValue(result.resultJson))
     return root.toString()
 }
 
@@ -543,10 +543,6 @@ const STDIO_CHUNK_SIZE: Int64 = 4096
 
 func encodeMcpFrame(body: String): String {
     return "${MCP_CONTENT_LENGTH_HEADER} ${body.toArray().size}${MCP_HEADER_DELIMITER}${body}"
-}
-
-func extractMcpBodies(raw: String): Array<String> {
-    return extractLspBodies(raw)
 }
 
 func readStdioFrame(reader: ConsoleReader): ?String {

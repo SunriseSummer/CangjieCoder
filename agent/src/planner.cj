@@ -139,6 +139,41 @@ func readFileStep(path: String, reason: String): PlannedToolCall {
     return PlannedToolCall("workspace.read_file", arguments, reason)
 }
 
+const FALLBACK_README_PATH: String = "README.md"
+
+func pruneFallbackSteps(steps: ArrayList<PlannedToolCall>): Unit {
+    while (steps.size > MAX_PLAN_STEPS) {
+        var removed = false
+        var index: Int64 = 0
+        while (index < steps.size) {
+            let step = steps[index]
+            if (step.tool == "workspace.read_file" && jsonField(step.arguments, "path") == FALLBACK_README_PATH) {
+                steps.remove(at: index)
+                removed = true
+                break
+            }
+            index += 1
+        }
+        if (removed) {
+            continue
+        }
+
+        index = 0
+        while (index < steps.size) {
+            if (steps[index].tool == "workspace.read_file") {
+                steps.remove(at: index)
+                removed = true
+                break
+            }
+            index += 1
+        }
+        if (removed) {
+            continue
+        }
+        steps.remove(at: steps.size - 1)
+    }
+}
+
 func extractPromptFilePath(prompt: String, workspaceFiles: Array<String>): String {
     // 优先选择提示词中明确提到的 .cj 文件；
     // 如果没点名，再退化到工作区里的第一个 Cangjie 源文件。
@@ -197,8 +232,8 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     // 常规请求默认先看目录、README、cjpm.toml，
     // 把“先理解工作区再行动”固化为本地回退策略。
     steps.add(PlannedToolCall("workspace.list_files", JsonObject(), "Inspect the workspace layout before deeper actions."))
-    if (workspaceFiles.contains("README.md")) {
-        steps.add(readFileStep("README.md", "Read the workspace README to understand the project purpose and commands."))
+    if (workspaceFiles.contains(FALLBACK_README_PATH)) {
+        steps.add(readFileStep(FALLBACK_README_PATH, "Read the workspace README to understand the project purpose and commands."))
     }
     if (workspaceFiles.contains("cjpm.toml")) {
         steps.add(readFileStep("cjpm.toml", "Inspect cjpm.toml to understand the package/workspace configuration."))
@@ -226,6 +261,7 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     if (needsMutation || normalized.contains("test") || prompt.contains("测试") || prompt.contains("验证")) {
         steps.add(PlannedToolCall("workspace.run_test", JsonObject(), "Run tests because the request explicitly mentions validation."))
     }
+    pruneFallbackSteps(steps)
     return AgentPlan("Use local heuristics to inspect the workspace and execute requested validation.", steps.toArray())
 }
 
