@@ -156,5 +156,6 @@ class CangjieCoderBasicsTest {
             case None => ()
         }
         clearLspCommandCache()
+        closeLspSession()
     }
 }

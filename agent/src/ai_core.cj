@@ -99,6 +99,34 @@ class ConversationSession {
     }
 }
 
+// 从 JSON 数组反序列化对话轮次到指定会话，分离内层循环降低调用方圈复杂度
+func deserializeSessionTurns(session: ConversationSession, turnsArr: JsonArray): Unit {
+    var index: Int64 = 0
+    while (index < turnsArr.size()) {
+        match (turnsArr.get(index)) {
+            case Some(turnValue) =>
+                let turnObj = turnValue.asObject()
+                session.addTurn(jsonField(turnObj, "role"), jsonField(turnObj, "content"))
+            case None => ()
+        }
+        index += 1
+    }
+}
+
+// 从已解析的 JSON 根对象恢复所有会话，分离 sessions 遍历逻辑
+func deserializeSessions(sessions: HashMap<String, ConversationSession>, root: JsonObject): Unit {
+    match (root.get("sessions")) {
+        case Some(sessionsValue) =>
+            let fields = sessionsValue.asObject().getFields()
+            for ((id, turnsValue) in fields) {
+                let session = ConversationSession(id)
+                deserializeSessionTurns(session, turnsValue.asArray())
+                sessions[id] = session
+            }
+        case None => ()
+    }
+}
+
 class ConversationStore {
     let sessions = HashMap<String, ConversationSession>()
     var nextSessionId: Int64 = 1
@@ -149,6 +177,7 @@ class ConversationStore {
     }
 
     // 从 JSON 文件加载会话状态，恢复中断的任务上下文。
+    // 解析逻辑委托给 deserializeSessions/deserializeSessionTurns 以降低圈复杂度。
     public func loadFromFile(path: String): Unit {
         if (!exists(path)) {
             return
@@ -156,34 +185,11 @@ class ConversationStore {
         try {
             let content = String.fromUtf8(File.readFrom(path))
             let root = JsonValue.fromStr(content).asObject()
-            let nextId = match (root.get("nextSessionId")) {
-                case Some(value) => Int64.parse(value.toString())
-                case None => nextSessionId
-            }
-            nextSessionId = nextId
-            match (root.get("sessions")) {
-                case Some(sessionsValue) =>
-                    let sessionsObj = sessionsValue.asObject()
-                    let fields = sessionsObj.getFields()
-                    for ((id, turnsValue) in fields) {
-                        let session = ConversationSession(id)
-                        let turnsArr = turnsValue.asArray()
-                        var index: Int64 = 0
-                        while (index < turnsArr.size()) {
-                            match (turnsArr.get(index)) {
-                                case Some(turnValue) =>
-                                    let turnObj = turnValue.asObject()
-                                    let role = jsonField(turnObj, "role")
-                                    let turnContent = jsonField(turnObj, "content")
-                                    session.addTurn(role, turnContent)
-                                case None => ()
-                            }
-                            index += 1
-                        }
-                        sessions[id] = session
-                    }
+            match (root.get("nextSessionId")) {
+                case Some(value) => nextSessionId = Int64.parse(value.toString())
                 case None => ()
             }
+            deserializeSessions(sessions, root)
         } catch (e: Exception) {
             // 文件损坏时静默忽略，从空状态重新开始
         }
