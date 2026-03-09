@@ -17,7 +17,9 @@ const CONVERSATION_TURN_LIMIT: Int64 = 12
 const TOKEN_BUDGET: Int64 = 8000
 
 // 粗略估算文本的 token 数量。
-// 英文约每 4 字符 1 token，中文约每 2 字符 1 token；取 bytes/3 作为折中近似。
+// 算法：bytes / 3，是对英文（~4字符/token）和中文（~2字符/token）混合场景的折中。
+// 注意：这是近似值，不同模型的实际 tokenizer 结果会有差异，
+// 但足以在上下文滑动窗口中做安全截断决策。
 func estimateTokenCount(text: String): Int64 {
     if (text.isEmpty()) {
         return 0

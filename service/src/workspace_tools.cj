@@ -146,7 +146,7 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
     return toolResultJson(true, if (count == 0) { "No workspace matches found" } else { "Found workspace text matches" }, data: data)
 }
 
-// 在工作区中创建文件，默认禁止覆写已有文件
+// 在工作区中创建文件，默认禁止覆盖已有文件
 func workspaceCreateFileJson(repoRoot: String,
                              path: String,
                              content: String,
@@ -162,7 +162,7 @@ func workspaceCreateFileJson(repoRoot: String,
             "Workspace file creation rejected",
             "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
     }
-    // 覆写前自动备份原始内容，支持事务回滚
+    // 覆盖前自动备份原始内容，支持事务回滚
     if (existedBefore && overwrite) {
         globalBackupStore.backup(fullPath)
     }

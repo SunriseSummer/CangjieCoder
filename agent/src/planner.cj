@@ -3,6 +3,9 @@ package cangjiecoderagent
 import std.collection.*
 import stdx.encoding.json.*
 
+// 规划提示词中共用的探索性补充规则，避免重复维护
+const PLAN_EXPLORE_RULE: String = "- use workspace.list_files or workspace.read_file to explore the workspace when needed"
+
 func extractJsonObjectText(text: String): String {
     let codeFence = "```"
     let fencedStart = match (text.indexOf(codeFence)) {
@@ -471,7 +474,7 @@ Rules:
 - prefer reading configuration/docs or analyzing code before destructive changes
 - include workspace.run_build / workspace.run_test when they are clearly needed
 - do not wrap the JSON in markdown
-- use workspace.list_files or workspace.read_file to explore the workspace when needed
+${PLAN_EXPLORE_RULE}
 """
 }
 
@@ -527,6 +530,6 @@ Rules:
 - choose at most ${MAX_PLAN_STEPS} steps
 - use only tool names from the provided tool list
 - do not wrap the JSON in markdown
-- use workspace.list_files or workspace.read_file to explore when needed
+${PLAN_EXPLORE_RULE}
 """
 }
