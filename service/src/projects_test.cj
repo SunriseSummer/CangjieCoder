@@ -18,13 +18,27 @@ class ProjectBootstrapTest {
         let targetRoot = "${repoRoot}/target/bootstrap-json-parser-test"
         removeIfExists(targetRoot, recursive: true)
 
-        let message = bootstrapJsonParserProject(repoRoot, "target/bootstrap-json-parser-test")
+        let message = bootstrapJsonParserProject(repoRoot, repoRoot, "target/bootstrap-json-parser-test")
         @Expect(message.contains("Bootstrapped JsonParser example"))
         @Expect(exists("${targetRoot}/cjpm.toml"))
         @Expect(exists("${targetRoot}/src/json_parser.cj"))
         @Expect(readTextFile("${targetRoot}/src/json_parser.cj").contains("class JsonParser"))
 
         removeIfExists(targetRoot, recursive: true)
+    }
+
+    @TestCase
+    func bootstrapJsonParserCreatesMissingParents() {
+        let repoRoot = getWorkingDirectory().toString()
+        let nestedRoot = "${repoRoot}/target/generated/nested/bootstrap-json-parser-test"
+        removeIfExists("${repoRoot}/target/generated", recursive: true)
+
+        let message = bootstrapJsonParserProject(repoRoot, repoRoot, "target/generated/nested/bootstrap-json-parser-test")
+        @Expect(message.contains("Bootstrapped JsonParser example"))
+        @Expect(exists("${nestedRoot}/cjpm.toml"))
+        @Expect(exists("${nestedRoot}/src/json_parser.cj"))
+
+        removeIfExists("${repoRoot}/target/generated", recursive: true)
     }
 
     @TestCase

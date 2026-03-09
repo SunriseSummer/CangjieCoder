@@ -117,9 +117,9 @@ func analysisJson(result: AnalysisResult): String {
     return root.toString()
 }
 
-func exampleProjectsJson(repoRoot: String): String {
+func exampleProjectsJson(serviceRoot: String): String {
     let array = JsonArray()
-    for (project in listExampleProjects(repoRoot)) {
+    for (project in listExampleProjects(serviceRoot)) {
         let item = JsonObject()
         item.put("id", JsonString(project.id))
         item.put("name", JsonString(project.name))
@@ -228,7 +228,11 @@ func mcpToolCallResultJson(content: String): String {
 }
 
 func providerReplySucceeded(reply: String): Bool {
-    return !reply.startsWith("Missing API key:") && !reply.startsWith("Unknown provider:")
+    // Provider failures are surfaced as plain-text sentinel prefixes so the
+    // agent can degrade locally without parsing provider-specific error JSON.
+    return !reply.startsWith("Missing API key:") &&
+        !reply.startsWith("Unsupported provider:") &&
+        !reply.startsWith("Provider request failed:")
 }
 
 func astEditSucceeded(message: String): Bool {
@@ -241,6 +245,8 @@ func astEditSucceeded(message: String): Bool {
 func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
     let fullPath = ensureWorkspacePath(repoRoot, path)
     let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
+    // Prefer richer structural tools first, then fall back to progressively more
+    // generic analyzers so the caller gets the best available signal locally.
     let (treeOk, treeStdout, treeStderr) = runCommandWithCapturedOutput(treeSitterCommand,
         ["parse", fullPath],
         repoRoot)
@@ -300,6 +306,8 @@ func chatWithMemoryJson(repoRoot: String,
                         analyzePath: String,
                         sessionId: String): String {
     let session = conversations.getOrCreate(sessionId: sessionId)
+    // Analyzer output is injected into the system prompt instead of the user turn
+    // so provider-side memory still sees a clean conversational transcript.
     let analysis = if (analyzePath.trimAscii().isEmpty()) {
         ""
     } else {
@@ -311,6 +319,8 @@ func chatWithMemoryJson(repoRoot: String,
         systemPrompt = "${systemPrompt}\n\nRecent conversation turns:\n${historyPrompt}"
     }
     let reply = chatWithProvider(provider, model, systemPrompt, prompt)
+    // Record both sides after the provider call so a failed reply is still visible
+    // to later turns and to MCP clients inspecting the conversation state.
     session.addTurn("user", prompt)
     session.addTurn("assistant", reply)
 
@@ -440,7 +450,8 @@ func workspaceRunCommandJson(repoRoot: String,
     return toolCommandResultJson(normalizedCommand, arguments, workingDirectory, status, stdout, stderr)
 }
 
-func callMcpTool(repoRoot: String,
+func callMcpTool(workspaceRoot: String,
+                 serviceRoot: String,
                  registry: SkillRegistry,
                  conversations: ConversationStore,
                  toolName: String,
@@ -454,19 +465,19 @@ func callMcpTool(repoRoot: String,
                 return toolResultJson(true, "Skills search completed", data: data)
             case "workspace.read_file" =>
                 let path = jsonField(args, "path")
-                let fullPath = ensureWorkspacePath(repoRoot, path)
+                let fullPath = ensureWorkspacePath(workspaceRoot, path)
                 let content = readTextFile(fullPath)
                 let data = JsonObject()
-                data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))
+                data.put("path", JsonString(workspaceRelativePath(workspaceRoot, fullPath)))
                 data.put("content", JsonString(content))
                 data.put("bytes", JsonInt(content.toArray().size))
                 return toolResultJson(true, "Read workspace file", data: data)
             case "workspace.list_files" =>
-                return workspaceListFilesJson(repoRoot,
+                return workspaceListFilesJson(workspaceRoot,
                     jsonField(args, "path"),
                     limit: parseJsonIntField(args, "limit", fallback: 200))
             case "workspace.search_text" =>
-                return workspaceSearchTextJson(repoRoot,
+                return workspaceSearchTextJson(workspaceRoot,
                     jsonField(args, "query"),
                     jsonField(args, "path"),
                     limit: parseJsonIntField(args, "limit", fallback: 20))
@@ -474,29 +485,29 @@ func callMcpTool(repoRoot: String,
                 let path = jsonField(args, "path")
                 let oldText = jsonField(args, "oldText")
                 let newText = jsonField(args, "newText")
-                let message = replaceExactText(repoRoot, path, oldText, newText)
+                let message = replaceExactText(workspaceRoot, path, oldText, newText)
                 let ok = message.startsWith("updated ")
                 return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
             case "workspace.run_build" =>
-                return workspaceRunCommandJson(repoRoot, "cjpm", ["build"], jsonField(args, "path"))
+                return workspaceRunCommandJson(workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
             case "workspace.run_test" =>
-                return workspaceRunCommandJson(repoRoot, "cjpm", ["test"], jsonField(args, "path"))
+                return workspaceRunCommandJson(workspaceRoot, "cjpm", ["test"], jsonField(args, "path"))
             case "workspace.run_command" =>
-                return workspaceRunCommandJson(repoRoot,
+                return workspaceRunCommandJson(workspaceRoot,
                     jsonField(args, "command"),
                     jsonStringArrayField(args, "args"),
                     jsonField(args, "path"))
             case "cangjie.analyze_file" =>
                 let path = jsonField(args, "path")
-                let analysis = analyzeCangjieFile(repoRoot, path)
+                let analysis = analyzeCangjieFile(workspaceRoot, path)
                 let data = parseJsonObject(analysisJson(analysis))
                 return toolResultJson(analysis.success, analysis.summary, data: data)
             case "project.list_examples" =>
-                let data = parseJsonObject(exampleProjectsJson(repoRoot))
+                let data = parseJsonObject(exampleProjectsJson(serviceRoot))
                 return toolResultJson(true, "Listed example projects", data: data)
             case "project.bootstrap_json_parser" =>
                 let path = jsonField(args, "path")
-                let message = bootstrapJsonParserProject(repoRoot, path)
+                let message = bootstrapJsonParserProject(serviceRoot, workspaceRoot, path)
                 let ok = message.startsWith("Bootstrapped ")
                 return toolMessageJson(ok, if (ok) { "Bootstrapped JsonParser example" } else { "JsonParser bootstrap did not complete" }, message)
             case "conversation.start_session" =>
@@ -508,7 +519,7 @@ func callMcpTool(repoRoot: String,
                 let history = parseJsonObject(conversations.historyJson(jsonField(args, "sessionId")))
                 return toolResultJson(true, "Loaded conversation history", data: history)
             case "conversation.chat" =>
-                let chat = parseJsonObject(chatWithMemoryJson(repoRoot,
+                let chat = parseJsonObject(chatWithMemoryJson(workspaceRoot,
                     registry,
                     conversations,
                     jsonField(args, "provider", fallback: "kimi"),
@@ -519,10 +530,10 @@ func callMcpTool(repoRoot: String,
                 let ok = jsonField(chat, "success") == "true"
                 return toolResultJson(ok, if (ok) { "Conversation turn completed" } else { "Conversation turn failed" }, data: chat)
             case "cangjie.lsp_status" =>
-                let status = parseJsonObject(lspStatusJson(inspectLspStatus(repoRoot)))
+                let status = parseJsonObject(lspStatusJson(inspectLspStatus(workspaceRoot)))
                 return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
             case "cangjie.lsp_probe" =>
-                let result = parseJsonObject(lspProbeJson(probeLspServer(repoRoot)))
+                let result = parseJsonObject(lspProbeJson(probeLspServer(workspaceRoot)))
                 let ok = jsonField(result, "success") == "true"
                 return toolResultJson(ok, if (ok) { "LSP probe succeeded" } else { "LSP probe did not complete cleanly" }, data: result)
             case "cangjie.edit_ast_node" =>
@@ -530,7 +541,7 @@ func callMcpTool(repoRoot: String,
                 let nodeType = jsonField(args, "nodeType")
                 let replacement = jsonField(args, "replacement")
                 let index = parseJsonIntField(args, "index", fallback: 0)
-                let message = editAstNode(repoRoot, path, nodeType, replacement, index: index)
+                let message = editAstNode(workspaceRoot, path, nodeType, replacement, index: index)
                 let ok = astEditSucceeded(message)
                 return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
             case _ =>
@@ -542,13 +553,15 @@ func callMcpTool(repoRoot: String,
 }
 
 class McpRuntime {
-    let repoRoot: String
+    let workspaceRoot: String
+    let serviceRoot: String
     let registry: SkillRegistry
     let conversations: ConversationStore
 
-    public init(repoRoot: String) {
-        this.repoRoot = repoRoot
-        this.registry = SkillRegistry(repoRoot)
+    public init(workspaceRoot: String, serviceRoot!: String = "") {
+        this.workspaceRoot = workspaceRoot
+        this.serviceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
+        this.registry = SkillRegistry(this.serviceRoot)
         this.conversations = ConversationStore()
     }
 
@@ -594,7 +607,12 @@ class McpRuntime {
                         case Some(value) => value.asObject()
                         case None => JsonObject()
                     }
-                    return Some(jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(repoRoot, registry, conversations, toolName, toolArgs))))
+                    return Some(jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(workspaceRoot,
+                        serviceRoot,
+                        registry,
+                        conversations,
+                        toolName,
+                        toolArgs))))
                 case _ =>
                     return Some(jsonRpcError(idJson, -32601, "Unsupported MCP method: ${method}"))
             }
@@ -663,7 +681,7 @@ func readStdioFrame(reader: ConsoleReader): ?String {
 }
 
 func startMcpStdioServer(config: AppConfig): Unit {
-    let runtime = McpRuntime(config.repoRoot)
+    let runtime = McpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
     let reader = getStdIn()
     let writer = getStdOut()
     while (true) {
@@ -682,7 +700,7 @@ func startMcpStdioServer(config: AppConfig): Unit {
 }
 
 func startServer(config: AppConfig): Unit {
-    let runtime = McpRuntime(config.repoRoot)
+    let runtime = McpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
     let server = ServerBuilder().addr(config.host).port(config.port).build()
 
     server.distributor.register("/health", {
@@ -703,7 +721,7 @@ func startServer(config: AppConfig): Unit {
         ctx =>
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(exampleProjectsJson(config.repoRoot))
+            .body(exampleProjectsJson(config.serviceRoot))
     })
 
     server.distributor.register("/skills", {
@@ -728,7 +746,7 @@ func startServer(config: AppConfig): Unit {
         let path = jsonField(request, "path")
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(analysisJson(analyzeCangjieFile(config.repoRoot, path)))
+            .body(analysisJson(analyzeCangjieFile(config.workspaceRoot, path)))
     })
 
     server.distributor.register("/bootstrap/json-parser", {
@@ -736,7 +754,7 @@ func startServer(config: AppConfig): Unit {
         let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
         let path = jsonField(request, "path")
         let root = JsonObject()
-        root.put("message", JsonString(bootstrapJsonParserProject(config.repoRoot, path)))
+        root.put("message", JsonString(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, path)))
         ctx.responseBuilder
             .header("Content-Type", "application/json")
             .body(root.toString())
@@ -746,14 +764,14 @@ func startServer(config: AppConfig): Unit {
         ctx =>
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(lspStatusJson(inspectLspStatus(config.repoRoot)))
+            .body(lspStatusJson(inspectLspStatus(config.workspaceRoot)))
     })
 
     server.distributor.register("/lsp/probe", {
         ctx =>
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(lspProbeJson(probeLspServer(config.repoRoot)))
+            .body(lspProbeJson(probeLspServer(config.workspaceRoot)))
     })
 
     server.distributor.register("/conversations/start", {
@@ -778,7 +796,7 @@ func startServer(config: AppConfig): Unit {
         ctx =>
         let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
         let root = JsonObject()
-        root.put("message", JsonString(editAstNode(config.repoRoot,
+        root.put("message", JsonString(editAstNode(config.workspaceRoot,
             jsonField(request, "path"),
             jsonField(request, "nodeType"),
             jsonField(request, "replacement"),
@@ -793,7 +811,7 @@ func startServer(config: AppConfig): Unit {
         let request = parseJsonObject(StringReader(ctx.request.body).readToEnd())
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(chatWithMemoryJson(config.repoRoot,
+            .body(chatWithMemoryJson(config.workspaceRoot,
                 runtime.registry,
                 runtime.conversations,
                 jsonField(request, "provider", fallback: "kimi"),

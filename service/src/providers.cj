@@ -5,6 +5,7 @@ import std.env.*
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
+import stdx.net.tls.*
 
 func builtinProviders(): Array<ProviderSpec> {
     return [
@@ -13,7 +14,7 @@ func builtinProviders(): Array<ProviderSpec> {
             "Moonshot Kimi",
             "https://api.moonshot.cn/v1/chat/completions",
             "KIMI_API_KEY",
-            "kimi-k2-0711-preview"
+            "kimi-k2.5"
         ),
         ProviderSpec(
             "glm",
@@ -21,6 +22,13 @@ func builtinProviders(): Array<ProviderSpec> {
             "https://open.bigmodel.cn/api/paas/v4/chat/completions",
             "GLM_API_KEY",
             "glm-4.5"
+        ),
+        ProviderSpec(
+            "openrouter",
+            "OpenRouter",
+            "https://openrouter.ai/api/v1/chat/completions",
+            "OPENROUTER_API_KEY",
+            "openrouter/free"
         )
     ]
 }
@@ -43,6 +51,14 @@ func listProvidersText(): String {
     return String.join(lines.toArray(), delimiter: "\n")
 }
 
+func providerNamesText(): String {
+    let names = ArrayList<String>()
+    for (provider in builtinProviders()) {
+        names.add(provider.name)
+    }
+    return String.join(names.toArray(), delimiter: ", ")
+}
+
 func providerResponseToText(body: String): String {
     try {
         let root = JsonValue.fromStr(body).asObject()
@@ -62,6 +78,8 @@ func providerResponseToText(body: String): String {
             }
         }
     } catch (e: Exception) {
+        // Preserve the raw body when the provider response is not in the expected
+        // chat-completions shape so callers still receive diagnostic detail.
         return body
     }
     return body
@@ -100,15 +118,34 @@ func chatWithProvider(providerName: String,
 
             requestObject.put("messages", messages)
 
-            let client = ClientBuilder().build()
+            // HTTPS providers share the same request shape, so transport selection
+            // is reduced to whether TLS needs to be enabled on the client.
+            let clientBuilder = if (provider.baseUrl.startsWith("https://")) {
+                let tlsConfig = TlsClientConfig()
+                ClientBuilder().tlsConfig(tlsConfig)
+            } else {
+                ClientBuilder()
+            }
+            let client = clientBuilder.build()
             try {
-                let request = HttpRequestBuilder()
+                var requestBuilder = HttpRequestBuilder()
                     .post()
                     .url(provider.baseUrl)
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer ${apiKey}")
-                    .body(requestObject.toString())
-                    .build()
+                if (provider.name == "openrouter") {
+                    let referer = (getVariable("OPENROUTER_HTTP_REFERER") ?? "").trimAscii()
+                    let title = (getVariable("OPENROUTER_APP_TITLE") ?? "").trimAscii()
+                    if (!referer.isEmpty()) {
+                        requestBuilder = requestBuilder.header("HTTP-Referer", referer)
+                    }
+                    // OpenRouter accepts optional attribution headers that do not
+                    // apply to the other OpenAI-compatible providers.
+                    if (!title.isEmpty()) {
+                        requestBuilder = requestBuilder.header("X-Title", title)
+                    }
+                }
+                let request = requestBuilder.body(requestObject.toString()).build()
 
                 let response = client.send(request)
                 let body = StringReader(response.body).readToEnd()
@@ -119,6 +156,6 @@ func chatWithProvider(providerName: String,
                 return "Provider request failed: ${e}"
             }
         case None =>
-            return "Unsupported provider: ${providerName}. Supported providers: kimi, glm"
+            return "Unsupported provider: ${providerName}. Supported providers: ${providerNamesText()}"
     }
 }
