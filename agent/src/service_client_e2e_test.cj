@@ -3,6 +3,7 @@ package cangjiecoderagent
 import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
+import cangjiecoderagent.common.*
 
 func currentServiceDir(): String {
     return resolveDefaultServiceDir(canonicalize(getWorkingDirectory().toString()).toString())

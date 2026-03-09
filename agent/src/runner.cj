@@ -2,6 +2,8 @@ package cangjiecoderagent
 
 import std.collection.*
 import stdx.encoding.json.*
+import cangjiecoderagent.common.*
+import cangjiecoderagent.planner.*
 
 func mergedPlanSummary(plans: Array<AgentPlan>): String {
     // 多轮执行结束后，把每轮摘要串起来，便于最终总结同时保留 replanning 痕迹。

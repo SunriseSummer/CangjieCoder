@@ -8,6 +8,7 @@ import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
 import stdx.net.tls.*
+import cangjiecoderagent.common.*
 
 // 保留有限的最近对话，既能给规划/总结补上下文，也避免会话无限膨胀。
 const CONVERSATION_TURN_LIMIT: Int64 = 12

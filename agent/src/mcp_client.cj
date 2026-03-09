@@ -4,6 +4,7 @@ import std.collection.*
 import std.convert.*
 import std.fs.*
 import std.process.*
+import cangjiecoderagent.common.*
 import stdx.encoding.json.*
 
 const MCP_HEADER_DELIMITER: String = "\r\n\r\n"

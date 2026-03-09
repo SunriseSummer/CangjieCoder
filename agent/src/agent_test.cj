@@ -1,6 +1,8 @@
 package cangjiecoderagent
 
 import stdx.encoding.json.*
+import cangjiecoderagent.common.*
+import cangjiecoderagent.planner.*
 
 @Test
 class AgentHelpersTest {
