@@ -36,7 +36,7 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
 - `buildPlanPrompt()` 和 `buildReplanPrompt()` 使用紧凑摘要替代全量 JSON
 - 提取共用规则为 `PLAN_EXPLORE_RULE` 常量，避免重复维护
 
-**涉及文件**：`agent/src/planner.cj`
+**涉及文件**：`agent/src/planner/prompts.cj`
 
 ### 2.3 LSP 持久化长连接（Issue #3）
 
@@ -54,7 +54,7 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
 - 保留 `runLspRequestColdStart()` 作为兜底，确保稳定性
 - LSP 命令路径缓存（`lspCommandCache`）避免重复的文件系统和 PATH 探测
 
-**涉及文件**：`service/src/lsp.cj`
+**涉及文件**：`service/src/lsp/session.cj`、`service/src/lsp/queries.cj`
 
 ### 2.4 健壮的 JSON 提取（Issue #4）
 
@@ -70,7 +70,7 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
   - 每个候选通过 `JsonValue.fromStr()` 验证合法性
   - 无合法候选时返回空字符串（优雅降级）
 
-**涉及文件**：`agent/src/planner.cj`
+**涉及文件**：`agent/src/planner/json.cj`
 
 ### 2.5 事务回滚机制（Issue #5）
 
@@ -113,9 +113,9 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
 | 函数 | 文件 | 优化措施 |
 |------|------|----------|
 | `loadFromFile` | `ai_core.cj` | 提取 `deserializeSessionTurns()` 和 `deserializeSessions()`，嵌套从 5 级降至 3 级 |
-| `probeLspServer` | `lsp.cj` | 提取 `isSuccessfulInitializeResponse()` 和 `findSuccessfulProbeResponse()` |
+| `probeLspServer` | `lsp/queries.cj` | 提取 `isSuccessfulInitializeResponse()` 和 `findSuccessfulProbeResponse()` |
 | `runAgent` | `runner.cj` | 提取 `executeRoundSteps()` 和 `generateFinalReport()`，消除工具执行循环和最终报告的内联逻辑 |
-| `buildFallbackPlan` | `planner.cj` | 提取 `isNewProjectRequest()`，将 6 条件的项目检测逻辑分离 |
+| `buildFallbackPlan` | `planner/planning.cj` | 提取 `isNewProjectRequest()`，将 6 条件的项目检测逻辑分离 |
 
 ## 三、测试覆盖
 
@@ -152,17 +152,59 @@ LSP 连接经历了两个阶段：
 - 进程崩溃或流关闭 → 标记会话失效，下次查询重新初始化
 - `closeLspSession()` 和 `clearLspCommandCache()` 供测试和环境变更使用
 
-## 五、文件变更清单
+## 五、子包拆分
+
+### 5.1 LSP 子包（`cangjiecoder.lsp`）
+
+将原 `service/src/lsp.cj`（655 行）拆分为 `service/src/lsp/` 子包：
+
+| 文件 | 职责 |
+|------|------|
+| `protocol.cj` | 类型定义（LspStatus/LspProbeResult/LspQueryResult）、协议常量、帧编解码、消息构建、响应分类 |
+| `session.cj` | LspSessionManager 长驻会话管理、命令发现与缓存、帧流读取 |
+| `queries.cj` | 高层查询接口（document symbols/workspace symbols/definition）、冷启动回退、LSP 探测 |
+
+所有外部可见的类型和函数标记为 `public`，根包通过 `import cangjiecoder.lsp.*` 使用。子包内部复制了少量工具函数（`lspShortPreview`、`lspReadTextFile`、`lspEnsureWorkspacePath`、`lspRunCommand`）以避免对根包的循环依赖。
+
+### 5.2 Agent 共享类型子包（`cangjiecoderagent.common`）
+
+将原 `agent/src/agent_core.cj` 中的共享类型和工具函数拆分为 `agent/src/common/` 子包：
+
+| 文件 | 职责 |
+|------|------|
+| `types.cj` | AgentConfig、PlannedToolCall、AgentPlan、ToolExecution、ModelTurn、AgentPlanningContext、MAX_PLAN_STEPS |
+| `helpers.cj` | jsonField、parseJsonObject、shortPreview、extractStructuredData、jsonArrayStrings、containsAny、shellQuote |
+
+根包和 planner 子包都通过 `import cangjiecoderagent.common.*` 使用这些共享定义。
+
+### 5.3 规划器子包（`cangjiecoderagent.planner`）
+
+将原 `agent/src/planner.cj`（537 行）拆分为 `agent/src/planner/` 子包：
+
+| 文件 | 职责 |
+|------|------|
+| `json.cj` | extractJsonObjectText — 深度追踪 JSON 提取 |
+| `prompts.cj` | buildPlanPrompt、buildReplanPrompt、buildCompactWorkspaceSummary — 提示词构建 |
+| `planning.cj` | parsePlan、buildFallbackPlan、normalizePlanSteps — 计划解析与回退逻辑 |
+
+## 六、文件变更清单
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `agent/src/ai_core.cj` | 修改 | Token 预算、会话持久化、反序列化重构 |
-| `agent/src/planner.cj` | 修改 | 紧凑摘要、健壮 JSON 提取、isNewProjectRequest |
+| `agent/src/agent_core.cj` | 修改 | 移除迁入 common 子包的类型和函数 |
+| `agent/src/common/types.cj` | 新增 | 共享类型定义子包 |
+| `agent/src/common/helpers.cj` | 新增 | 共享工具函数子包 |
+| `agent/src/planner/json.cj` | 新增 | JSON 提取（从 planner.cj 拆出） |
+| `agent/src/planner/prompts.cj` | 新增 | 提示词构建（从 planner.cj 拆出） |
+| `agent/src/planner/planning.cj` | 新增 | 计划解析与回退（从 planner.cj 拆出） |
 | `agent/src/runner.cj` | 修改 | 提取 executeRoundSteps、generateFinalReport |
 | `agent/src/ai_core_test.cj` | 修改 | 新增 7 个测试 |
 | `agent/src/agent_test.cj` | 修改 | 新增 6 个测试 |
 | `service/src/core.cj` | 修改 | FileBackupStore、globalBackupStore |
-| `service/src/lsp.cj` | 修改 | LspSessionManager、持久化连接、命令缓存 |
+| `service/src/lsp/protocol.cj` | 新增 | LSP 协议层（从 lsp.cj 拆出） |
+| `service/src/lsp/session.cj` | 新增 | LSP 会话管理（从 lsp.cj 拆出） |
+| `service/src/lsp/queries.cj` | 新增 | LSP 查询接口（从 lsp.cj 拆出） |
 | `service/src/mcp_protocol.cj` | 修改 | workspace.rollback 工具定义 |
 | `service/src/mcp_server.cj` | 修改 | handleRollback 处理器 |
 | `service/src/workspace_tools.cj` | 修改 | 自动备份集成 |
