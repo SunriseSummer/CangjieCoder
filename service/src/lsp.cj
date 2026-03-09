@@ -596,6 +596,22 @@ func queryLspDefinition(repoRoot: String, path: String, line: Int64, column: Int
         setupNotifications: [buildDidOpenNotification(fullPath)])
 }
 
+// 判断 LSP 响应是否包含有效的 initialize 结果
+func isSuccessfulInitializeResponse(body: String): Bool {
+    return body.contains("\"capabilities\"") ||
+        (body.contains("\"result\"") && !body.contains("\"error\""))
+}
+
+// 在 LSP 响应列表中查找成功的 initialize 应答
+func findSuccessfulProbeResponse(bodies: Array<String>): ?String {
+    for (body in bodies) {
+        if (isSuccessfulInitializeResponse(body)) {
+            return body
+        }
+    }
+    return None
+}
+
 // LSP 探测：仅执行 initialize → shutdown 以验证 LSP 二进制是否可启动
 func probeLspServer(repoRoot: String): LspProbeResult {
     let command = match (resolveLspCommand(repoRoot)) {
@@ -612,11 +628,11 @@ func probeLspServer(repoRoot: String): LspProbeResult {
             buildLspNotification("exit", JsonNull())
         ]
         let (bodies, stderr) = runLspSession(command, repoRoot, messages)
-        for (body in bodies) {
-            if (body.contains("\"capabilities\"") || (body.contains("\"result\"") && !body.contains("\"error\""))) {
+        match (findSuccessfulProbeResponse(bodies)) {
+            case Some(body) =>
                 return LspProbeResult(true, true, command,
                     "LSP initialize probe succeeded.", shortPreview(body, maxLines: 12))
-            }
+            case None => ()
         }
         if (!bodies.isEmpty()) {
             return LspProbeResult(true, false, command,

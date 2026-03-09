@@ -326,6 +326,21 @@ func promptNeedsVerification(prompt: String): Bool {
         prompt.contains("验证")
 }
 
+// 判断用户提示词是否在请求创建新项目
+func isNewProjectRequest(prompt: String): Bool {
+    let normalized = prompt.toAsciiLower()
+    if (normalized.contains("new project") || normalized.contains("bootstrap")) {
+        return true
+    }
+    if (containsAny(prompt, ["新项目", "示例项目", "新建"])) {
+        return true
+    }
+    if (prompt.contains("创建") && prompt.contains("项目")) {
+        return true
+    }
+    return normalized.contains("jsonparser") || normalized.contains("json parser")
+}
+
 func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let prompt = context.userPrompt
     let normalized = prompt.toAsciiLower()
@@ -334,22 +349,13 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let workspaceFiles = extractWorkspaceFiles(context.workspaceSnapshot)
     let steps = ArrayList<PlannedToolCall>()
 
-    if (normalized.contains("new project") ||
-        normalized.contains("bootstrap") ||
-        containsAny(prompt, ["新项目", "示例项目", "新建"]) ||
-        (prompt.contains("创建") && prompt.contains("项目")) ||
-        normalized.contains("jsonparser") ||
-        normalized.contains("json parser")) {
+    if (isNewProjectRequest(prompt)) {
         let arguments = JsonObject()
         arguments.put("path", JsonString(extractTargetPathFromPrompt(prompt)))
-        // 当前仓库内唯一稳定维护的模板是 JsonParser 示例，
-        // 因此“新项目”类请求优先走确定性的 bootstrap 快路径。
         steps.add(PlannedToolCall("project.bootstrap_json_parser", arguments, "Bootstrap the starter project for a new-project style request."))
         return AgentPlan("Bootstrap a starter project and validate it locally.", steps.toArray())
     }
 
-    // 常规请求默认先看目录、README、cjpm.toml，
-    // 把“先理解工作区再行动”固化为本地回退策略。
     steps.add(PlannedToolCall("workspace.list_files", JsonObject(), "Inspect the workspace layout before deeper actions."))
     if (workspaceFiles.contains(FALLBACK_README_PATH)) {
         steps.add(readFileStep(FALLBACK_README_PATH, "Read the workspace README to understand the project purpose and commands."))
@@ -363,14 +369,10 @@ func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
         if (containsTool(allowedTools, "cangjie.lsp_document_symbols")) {
             let lspArguments = JsonObject()
             lspArguments.put("path", JsonString(candidateFile))
-            // LSP 符号查询比纯文本扫描更接近语义结构，
-            // 先拿它补一份轮廓，再决定是否继续走 analyze/编辑步骤。
             steps.add(PlannedToolCall("cangjie.lsp_document_symbols", lspArguments, "Inspect document-level symbols through the configured Cangjie LSP server."))
         }
         let arguments = JsonObject()
         arguments.put("path", JsonString(candidateFile))
-        // 选一个代表性源码文件做 analyze，通常比直接修改更稳，
-        // 也能给后续模型轮次补充更精确的上下文。
         steps.add(PlannedToolCall("cangjie.analyze_file", arguments, "Analyze a representative Cangjie source file related to the request."))
     }
 

@@ -117,6 +117,44 @@ func printRoundPlan(round: Int64, plan: AgentPlan, steps: Array<PlannedToolCall>
     }
 }
 
+// 执行一轮中的所有工具调用步骤，返回本轮执行结果和是否全部成功
+func executeRoundSteps(client: ServiceClient, steps: Array<PlannedToolCall>,
+                       executions: ArrayList<ToolExecution>): (Array<ToolExecution>, Bool) {
+    let roundExecutions = ArrayList<ToolExecution>()
+    var roundOk = true
+    for (step in steps) {
+        let result = client.callTool(step.tool, step.arguments)
+        let execution = formatExecution(result, step.tool, step.arguments)
+        executions.add(execution)
+        roundExecutions.add(execution)
+        println("[tool] ${execution.tool} => ${execution.summary}")
+        if (!execution.preview.trimAscii().isEmpty()) {
+            println(execution.preview)
+        }
+        if (!execution.ok) {
+            roundOk = false
+        }
+    }
+    return (roundExecutions.toArray(), roundOk)
+}
+
+// 生成最终总结：优先使用 provider 远程生成，不可用时退化到本地摘要
+func generateFinalReport(conversations: ConversationStore, config: AgentConfig,
+                         plans: ArrayList<AgentPlan>, executions: ArrayList<ToolExecution>,
+                         sessionId: String): String {
+    let finalPlan = AgentPlan(mergedPlanSummary(plans.toArray()), [])
+    let remoteFinalTurn = conversationTurn(conversations,
+        config.provider,
+        config.model,
+        reportingSystemPrompt(),
+        buildFinalPrompt(config.prompt, finalPlan, executions.toArray()),
+        sessionId)
+    if (!providerReplySucceeded(remoteFinalTurn.reply)) {
+        return buildLocalFinalSummary(finalPlan, executions.toArray())
+    }
+    return remoteFinalTurn.reply
+}
+
 func runAgent(config: AgentConfig): Int64 {
     let client = ServiceClient(config)
     let toolsJson = client.listToolsJson()
@@ -159,44 +197,18 @@ func runAgent(config: AgentConfig): Int64 {
             break
         }
 
-        let roundExecutions = ArrayList<ToolExecution>()
-        for (step in steps) {
-            let result = client.callTool(step.tool, step.arguments)
-            let execution = formatExecution(result, step.tool, step.arguments)
-            executions.add(execution)
-            roundExecutions.add(execution)
-            println("[tool] ${execution.tool} => ${execution.summary}")
-            if (!execution.preview.trimAscii().isEmpty()) {
-                println(execution.preview)
-            }
-            if (!execution.ok) {
-                allOk = false
-            }
+        let (roundExecutions, roundOk) = executeRoundSteps(client, steps, executions)
+        if (!roundOk) {
+            allOk = false
         }
 
-        if (!shouldTriggerFollowUpRound(config.prompt, roundExecutions.toArray(), executions.toArray(), round, config.maxRounds)) {
+        if (!shouldTriggerFollowUpRound(config.prompt, roundExecutions, executions.toArray(), round, config.maxRounds)) {
             break
         }
         round += 1
     }
 
-    let finalPlan = AgentPlan(mergedPlanSummary(plans.toArray()), [])
-    let remoteFinalTurn = conversationTurn(conversations,
-        config.provider,
-        config.model,
-        reportingSystemPrompt(),
-        buildFinalPrompt(config.prompt, finalPlan, executions.toArray()),
-        sessionId)
-    // provider 不可用时退化到本地摘要，避免“工具执行成功但最后一句话没生成”
-    // 这种体验断裂，保证用户始终能拿到确定性的最终结果。
-    let finalReply = if (!remoteFinalTurn.success ||
-        remoteFinalTurn.reply.startsWith("Provider request failed:") ||
-        remoteFinalTurn.reply.startsWith("Missing API key:") ||
-        remoteFinalTurn.reply.startsWith("Unsupported provider:")) {
-        buildLocalFinalSummary(finalPlan, executions.toArray())
-    } else {
-        remoteFinalTurn.reply
-    }
+    let finalReply = generateFinalReport(conversations, config, plans, executions, sessionId)
     println("\n[final]\n${finalReply}")
     return if (allOk) { 0 } else { 1 }
 }
