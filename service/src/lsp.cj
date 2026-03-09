@@ -15,6 +15,11 @@ const JSON_NULL_LITERAL: String = "null"
 const JSON_EMPTY_ARRAY_LITERAL: String = "[]"
 const JSON_EMPTY_OBJECT_LITERAL: String = "{}"
 
+// 持久化 LSP 会话相关常量
+const LSP_MAX_INITIALIZE_ATTEMPTS: Int64 = 20
+const LSP_MAX_QUERY_ATTEMPTS: Int64 = 50
+const LSP_BODY_READ_BUFFER_SIZE: Int64 = 4096
+
 struct LspStatus {
     public LspStatus(let available: Bool,
                      let command: String,
@@ -268,7 +273,8 @@ func readLspFrameFromStream(input: InputStream): ?String {
     var offset: Int64 = 0
     while (offset < contentLength) {
         let remaining = contentLength - offset
-        let chunk = Array<Byte>(remaining, repeat: 0)
+        let chunkSize = if (remaining < LSP_BODY_READ_BUFFER_SIZE) { remaining } else { LSP_BODY_READ_BUFFER_SIZE }
+        let chunk = Array<Byte>(chunkSize, repeat: 0)
         let bytesRead = input.read(chunk)
         if (bytesRead <= 0) {
             return None
@@ -347,7 +353,7 @@ class LspSessionManager {
             sendFrame(buildLspRequest(1, "initialize", buildLspInitializeParams(repoRoot: targetRepoRoot)))
             var found = false
             var attempts: Int64 = 0
-            while (attempts < 20 && !found) {
+            while (attempts < LSP_MAX_INITIALIZE_ATTEMPTS && !found) {
                 match (receiveFrame()) {
                     case Some(frame) =>
                         if (isResponseWithId(frame, 1)) {
@@ -387,7 +393,7 @@ class LspSessionManager {
             }
             sendFrame(buildLspRequest(requestId, method, params))
             var attempts: Int64 = 0
-            while (attempts < 50) {
+            while (attempts < LSP_MAX_QUERY_ATTEMPTS) {
                 match (receiveFrame()) {
                     case Some(frame) =>
                         if (isResponseWithId(frame, requestId)) {
