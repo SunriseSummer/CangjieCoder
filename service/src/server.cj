@@ -48,7 +48,13 @@ func parseJsonBoolField(obj: JsonObject, key: String, fallback!: Bool = false): 
     if (raw.isEmpty()) {
         return fallback
     }
-    return raw == "true"
+    if (raw == "true") {
+        return true
+    }
+    if (raw == "false") {
+        return false
+    }
+    return fallback
 }
 
 func jsonStringArrayField(obj: JsonObject, key: String): Array<String> {
@@ -371,7 +377,7 @@ func workspaceCreateFileJson(repoRoot: String,
     let existedBefore = exists(fullPath)
     let parentPath = Path(fullPath).parent.toString()
     if (!parentPath.isEmpty() && !exists(parentPath)) {
-        Directory.create(ensurePlannedWorkspacePath(repoRoot, parentPath), recursive: true)
+        Directory.create(parentPath, recursive: true)
     }
     if (existedBefore && !overwrite) {
         return toolMessageJson(false,

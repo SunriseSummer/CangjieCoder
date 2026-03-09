@@ -104,32 +104,38 @@ class ServerMcpTest {
     @TestCase
     func runtimeCanCreateNestedWorkspaceFileViaToolsCall() {
         let workspace = Directory.createTemp(getTempDirectory())
-        let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
-        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"nested/demo/generated.cj\",\"content\":\"package demo\\n\\nfunc generated(): Int64 {\\n    1\\n}\\n\"}}}")
-        match (response) {
-            case Some(payload) =>
-                @Expect(payload.contains("\"ok\":true"))
-                @Expect(exists("${workspace.toString()}/nested/demo/generated.cj"))
-            case None =>
-                @Expect(false)
+        try {
+            let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+            let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"nested/demo/generated.cj\",\"content\":\"package demo\\n\\nfunc generated(): Int64 {\\n    1\\n}\\n\"}}}")
+            match (response) {
+                case Some(payload) =>
+                    @Expect(payload.contains("\"ok\":true"))
+                    @Expect(exists("${workspace.toString()}/nested/demo/generated.cj"))
+                case None =>
+                    @Expect(false)
+            }
+        } finally {
+            removeIfExists(workspace.toString(), recursive: true)
         }
-        removeIfExists(workspace.toString(), recursive: true)
     }
 
     @TestCase
     func runtimeRejectsCreateFileOverwriteByDefault() {
         let workspace = Directory.createTemp(getTempDirectory())
-        let filePath = "${workspace.toString()}/demo.txt"
-        writeTextFile(filePath, "old")
-        let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
-        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"demo.txt\",\"content\":\"new\"}}}")
-        match (response) {
-            case Some(payload) =>
-                @Expect(payload.contains("\"ok\":false"))
-                @Expect(readTextFile(filePath), "old")
-            case None =>
-                @Expect(false)
+        try {
+            let filePath = "${workspace.toString()}/demo.txt"
+            writeTextFile(filePath, "old")
+            let runtime = McpRuntime(workspace.toString(), serviceRoot: getWorkingDirectory().toString())
+            let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"workspace.create_file\",\"arguments\":{\"path\":\"demo.txt\",\"content\":\"new\"}}}")
+            match (response) {
+                case Some(payload) =>
+                    @Expect(payload.contains("\"ok\":false"))
+                    @Expect(readTextFile(filePath), "old")
+                case None =>
+                    @Expect(false)
+            }
+        } finally {
+            removeIfExists(workspace.toString(), recursive: true)
         }
-        removeIfExists(workspace.toString(), recursive: true)
     }
 }

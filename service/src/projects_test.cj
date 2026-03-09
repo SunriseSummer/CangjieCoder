@@ -12,10 +12,12 @@ func restoreVariable(key: String, previousValue: ?String): Unit {
 
 func fakeLspServerScript(tempRoot: String, responseBody: String): String {
     let scriptPath = "${tempRoot}/fake-lsp.sh"
+    // 这里显式拆开 `$` 与 `{#body}`，避免仓颉字符串插值把 bash 变量长度展开误判成自身语法。
+    let bashBodyLengthRef = "$" + "{#body}"
     let scriptLines = [
         "#!/usr/bin/env bash",
         "body='${responseBody}'",
-        "printf 'Content-Length: %s\\r\\n\\r\\n%s' \"" + "$" + "{#body}\" \"$body\"",
+        "printf 'Content-Length: %s\\r\\n\\r\\n%s' \"${bashBodyLengthRef}\" \"$body\"",
         ""
     ]
     let script = String.join(scriptLines, delimiter: "\n")
