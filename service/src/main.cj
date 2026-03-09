@@ -1,27 +1,42 @@
 package cangjiecoder
 
+import std.argopt.*
+import std.collection.*
 import std.convert.*
+import std.env.*
+import std.fs.*
 
+// 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {
-    println("CangjieCoder - lightweight AI coding tool for Cangjie projects")
+    println("CangjieCoder ${APP_VERSION} - lightweight AI coding tool for Cangjie projects")
     println("")
     println("Usage:")
-    println("  cangjiecoder serve [--repo WORKSPACE] [--host HOST] [--port PORT]")
-    println("  cangjiecoder mcp-stdio [--repo WORKSPACE]")
-    println("  cangjiecoder skills [--repo WORKSPACE]")
-    println("  cangjiecoder skills-search <query> [--repo WORKSPACE]")
-    println("  cangjiecoder examples [--repo WORKSPACE]")
-    println("  cangjiecoder bootstrap-json-parser <path> [--repo WORKSPACE]")
-    println("  cangjiecoder analyze <path> [--repo PATH]")
-    println("  cangjiecoder create-file <path> [content] [--repo PATH]")
-    println("  cangjiecoder lsp-status [--repo PATH]")
-    println("  cangjiecoder lsp-probe [--repo PATH]")
-    println("  cangjiecoder lsp-document-symbols <path> [--repo PATH]")
-    println("  cangjiecoder lsp-workspace-symbols [query] [--repo PATH]")
-    println("  cangjiecoder lsp-definition <path> <line> <column> [--repo PATH]")
+    println("  cangjiecoder [OPTIONS] <subcommand> [ARGS...]")
+    println("")
+    println("Subcommands:")
+    println("  serve                         Start HTTP API server")
+    println("  mcp-stdio                     Start MCP stdio server")
+    println("  skills                        List all registered skills")
+    println("  skills-search <query>         Search skills by keyword")
+    println("  examples                      List example projects")
+    println("  bootstrap-json-parser <path>  Generate a JSON parser project at <path>")
+    println("  analyze <path>                Analyze a Cangjie source file")
+    println("  create-file <path> [content]  Create a new workspace file")
+    println("  lsp-status                    Check LSP availability")
+    println("  lsp-probe                     Probe the LSP binary")
+    println("  lsp-document-symbols <path>   Query document symbols via LSP")
+    println("  lsp-workspace-symbols [query] Query workspace symbols via LSP")
+    println("  lsp-definition <p> <l> <c>    Query definition via LSP")
+    println("  help                          Show this help message")
+    println("")
+    println("Global Options:")
+    println("  -h, --help       Show help message")
+    println("  -V, --version    Show version")
+    println("  -r, --repo PATH  Target workspace root (default: service directory)")
+    println("  --host HOST      HTTP server host (default: 127.0.0.1)")
+    println("  -p, --port PORT  HTTP server port (default: 8080)")
     println("")
     println("Environment:")
-    println("  --repo                target workspace root; defaults to the service directory")
     println("  STDX_PATH            stdx binary dependency directory")
     println("  TREE_SITTER_CANGJIE  tree-sitter command with Cangjie grammar support")
     println("  CJLINT_COMMAND       override cjlint command")
@@ -30,14 +45,72 @@ func printUsage(): Unit {
     println("  CANGJIE_SDK_HOME     SDK home used to auto-discover tools/bin/LSPServer")
 }
 
+// 基于 std.argopt 解析结果构造 AppConfig
+func buildAppConfig(options: HashMap<String, String>): AppConfig {
+    let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
+    let workspaceRoot = canonicalize(options.get("repo") ?? serviceRoot).toString()
+    let host = options.get("host") ?? "127.0.0.1"
+    var port: UInt16 = 8080
+    let portStr = (options.get("port") ?? "").trimAscii()
+    if (!portStr.isEmpty()) {
+        try {
+            port = UInt16.parse(portStr)
+        } catch (e: Exception) {
+            port = 8080
+        }
+    }
+    return AppConfig(workspaceRoot, serviceRoot, host, port)
+}
+
+// 获取第 n 个非选项参数，越界时返回空串
+func nonOptionAt(nonOptions: Array<String>, index: Int64): String {
+    if (index < nonOptions.size) {
+        return nonOptions[index]
+    }
+    return ""
+}
+
 main(args: Array<String>): Int64 {
-    if (args.isEmpty()) {
+    // 使用 std.argopt 统一管理全局选项，子命令通过 nonOptions 获取
+    let specs: Array<ArgumentSpec> = [
+        Full("help", r'h', NoValue),
+        Full("version", r'V', NoValue),
+        Full("repo", r'r', RequiredValue),
+        Long("host", RequiredValue),
+        Full("port", r'p', RequiredValue),
+    ]
+
+    var options = HashMap<String, String>()
+    var nonOptions = Array<String>()
+    try {
+        let result = parseArguments(args, specs)
+        for ((k, v) in result.options) {
+            options[k] = v
+        }
+        nonOptions = result.nonOptions
+    } catch (e: ArgumentParseException) {
+        eprintln("参数解析错误: ${e}")
+        printUsage()
+        return 1
+    }
+
+    if (options.contains("help") || options.contains("h")) {
+        printUsage()
+        return 0
+    }
+    if (options.contains("version") || options.contains("V")) {
+        println("CangjieCoder ${APP_VERSION}")
+        return 0
+    }
+    if (nonOptions.isEmpty()) {
         printUsage()
         return 0
     }
 
-    let config = parseConfig(args)
-    match (args[0]) {
+    let config = buildAppConfig(options)
+    let subcommand = nonOptions[0]
+
+    match (subcommand) {
         case "serve" =>
             startServer(config)
             return 0
@@ -51,12 +124,13 @@ main(args: Array<String>): Int64 {
             }
             return 0
         case "skills-search" =>
-            if (args.size < 2) {
+            let query = nonOptionAt(nonOptions, 1)
+            if (query.isEmpty()) {
                 eprintln("skills-search requires a query")
                 return 1
             }
             let registry = SkillRegistry(config.serviceRoot)
-            for (skill in registry.search(args[1], limit: 8)) {
+            for (skill in registry.search(query, limit: 8)) {
                 println("${skill.id}: ${skill.description}")
                 println(skill.preview)
                 println("")
@@ -68,28 +142,31 @@ main(args: Array<String>): Int64 {
             }
             return 0
         case "bootstrap-json-parser" =>
-            if (args.size < 2) {
+            let path = nonOptionAt(nonOptions, 1)
+            if (path.isEmpty()) {
                 eprintln("bootstrap-json-parser requires a target path")
                 return 1
             }
-            println(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, args[1]))
+            println(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, path))
             return 0
         case "analyze" =>
-            if (args.size < 2) {
+            let path = nonOptionAt(nonOptions, 1)
+            if (path.isEmpty()) {
                 eprintln("analyze requires a file path")
                 return 1
             }
-            let result = analyzeCangjieFile(config.workspaceRoot, args[1])
+            let result = analyzeCangjieFile(config.workspaceRoot, path)
             println("[${result.engine}] ${result.summary}")
             println(result.output)
             return if (result.success) { 0 } else { 1 }
         case "create-file" =>
-            if (args.size < 2) {
+            let path = nonOptionAt(nonOptions, 1)
+            if (path.isEmpty()) {
                 eprintln("create-file requires a target path")
                 return 1
             }
-            let content = if (args.size >= 3 && !args[2].startsWith("--")) { args[2] } else { "" }
-            println(workspaceCreateFileJson(config.workspaceRoot, args[1], content))
+            let content = nonOptionAt(nonOptions, 2)
+            println(workspaceCreateFileJson(config.workspaceRoot, path, content))
             return 0
         case "lsp-status" =>
             let status = inspectLspStatus(config.workspaceRoot)
@@ -110,11 +187,12 @@ main(args: Array<String>): Int64 {
             }
             return if (result.success) { 0 } else { 1 }
         case "lsp-document-symbols" =>
-            if (args.size < 2) {
+            let path = nonOptionAt(nonOptions, 1)
+            if (path.isEmpty()) {
                 eprintln("lsp-document-symbols requires a file path")
                 return 1
             }
-            let result = queryLspDocumentSymbols(config.workspaceRoot, args[1])
+            let result = queryLspDocumentSymbols(config.workspaceRoot, path)
             println(result.summary)
             if (!result.command.isEmpty()) {
                 println("command: ${result.command}")
@@ -124,7 +202,7 @@ main(args: Array<String>): Int64 {
             }
             return if (result.success) { 0 } else { 1 }
         case "lsp-workspace-symbols" =>
-            let query = if (args.size >= 2 && !args[1].startsWith("--")) { args[1] } else { "" }
+            let query = nonOptionAt(nonOptions, 1)
             let result = queryLspWorkspaceSymbols(config.workspaceRoot, query)
             println(result.summary)
             if (!result.command.isEmpty()) {
@@ -135,14 +213,17 @@ main(args: Array<String>): Int64 {
             }
             return if (result.success) { 0 } else { 1 }
         case "lsp-definition" =>
-            if (args.size < 4) {
+            let path = nonOptionAt(nonOptions, 1)
+            let lineStr = nonOptionAt(nonOptions, 2)
+            let colStr = nonOptionAt(nonOptions, 3)
+            if (path.isEmpty() || lineStr.isEmpty() || colStr.isEmpty()) {
                 eprintln("lsp-definition requires path, line, and column")
                 return 1
             }
             let result = queryLspDefinition(config.workspaceRoot,
-                args[1],
-                Int64.parse(args[2]),
-                Int64.parse(args[3]))
+                path,
+                Int64.parse(lineStr),
+                Int64.parse(colStr))
             println(result.summary)
             if (!result.command.isEmpty()) {
                 println("command: ${result.command}")
@@ -155,6 +236,7 @@ main(args: Array<String>): Int64 {
             printUsage()
             return 0
         case _ =>
+            eprintln("Unknown subcommand: ${subcommand}")
             printUsage()
             return 1
     }

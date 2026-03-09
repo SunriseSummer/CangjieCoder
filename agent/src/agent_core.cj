@@ -1,5 +1,6 @@
 package cangjiecoderagent
 
+import std.argopt.*
 import std.collection.*
 import std.convert.*
 import std.env.*
@@ -67,50 +68,70 @@ struct AgentPlanningContext {
                                 let exampleProjectsJson: String) {}
 }
 
+// 使用 std.argopt 统一管理 Agent CLI 选项
 func parseConfig(args: Array<String>): AgentConfig {
-    var workspaceRoot = canonicalize(getWorkingDirectory().toString()).toString()
-    var serviceDir = resolveDefaultServiceDir(workspaceRoot)
-    var serviceDirExplicit = false
-    var provider = DEFAULT_PROVIDER
-    var model = DEFAULT_MODEL
-    var maxRounds = DEFAULT_MAX_ROUNDS
-    var prompt = ""
-    var index = 0
-    while (index < args.size) {
-        let current = args[index]
-        if (current == "--workspace" && index + 1 < args.size) {
-            workspaceRoot = canonicalize(args[index + 1]).toString()
-            index += 1
-        } else if (current == "--service-dir" && index + 1 < args.size) {
-            serviceDir = canonicalize(args[index + 1]).toString()
-            serviceDirExplicit = true
-            index += 1
-        } else if (current == "--provider" && index + 1 < args.size) {
-            provider = args[index + 1]
-            index += 1
-        } else if (current == "--model" && index + 1 < args.size) {
-            model = args[index + 1]
-            index += 1
-        } else if (current == "--max-rounds" && index + 1 < args.size) {
-            maxRounds = Int64.parse(args[index + 1])
-            index += 1
-        } else if (current == "--prompt" && index + 1 < args.size) {
-            let promptParts = ArrayList<String>()
-            var promptIndex = index + 1
-            // prompt 放在最后并吞掉剩余参数，允许用户直接输入自然语言，
-            // 不必在 shell 中额外处理复杂空格或中英文混合内容。
-            while (promptIndex < args.size) {
-                promptParts.add(args[promptIndex])
-                promptIndex += 1
-            }
-            prompt = String.join(promptParts.toArray(), delimiter: " ")
-            break
+    let cwd = canonicalize(getWorkingDirectory().toString()).toString()
+    let defaultServiceDir = resolveDefaultServiceDir(cwd)
+
+    let specs: Array<ArgumentSpec> = [
+        Full("help", r'h', NoValue),
+        Full("workspace", r'w', RequiredValue),
+        Full("service-dir", r's', RequiredValue),
+        Long("provider", RequiredValue),
+        Full("model", r'm', RequiredValue),
+        Full("max-rounds", r'n', RequiredValue),
+        Full("prompt", r'p', RequiredValue),
+    ]
+
+    var options = HashMap<String, String>()
+    var nonOptions = Array<String>()
+    try {
+        let result = parseArguments(args, specs)
+        for ((k, v) in result.options) {
+            options[k] = v
         }
-        index += 1
+        nonOptions = result.nonOptions
+    } catch (e: ArgumentParseException) {
+        return AgentConfig(cwd, defaultServiceDir, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MAX_ROUNDS, "")
     }
-    if (!serviceDirExplicit) {
-        serviceDir = resolveDefaultServiceDir(workspaceRoot)
+
+    // --help 或 -h 返回空 prompt，由上层显示用法
+    if (options.contains("help") || options.contains("h")) {
+        return AgentConfig(cwd, defaultServiceDir, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MAX_ROUNDS, "")
     }
+
+    let workspaceRoot = canonicalize(options.get("workspace") ?? cwd).toString()
+    let serviceDirOption = (options.get("service-dir") ?? "").trimAscii()
+    let serviceDir = if (serviceDirOption.isEmpty()) {
+        resolveDefaultServiceDir(workspaceRoot)
+    } else {
+        canonicalize(serviceDirOption).toString()
+    }
+    let provider = options.get("provider") ?? DEFAULT_PROVIDER
+    let model = options.get("model") ?? DEFAULT_MODEL
+
+    var maxRounds = DEFAULT_MAX_ROUNDS
+    let maxRoundsStr = (options.get("max-rounds") ?? "").trimAscii()
+    if (!maxRoundsStr.isEmpty()) {
+        try {
+            maxRounds = Int64.parse(maxRoundsStr)
+        } catch (e: Exception) {
+            maxRounds = DEFAULT_MAX_ROUNDS
+        }
+    }
+
+    // --prompt 的值与剩余非选项参数合并为完整提示词，
+    // 兼容不加引号的多词输入如 --prompt 请 创建 JsonParser 示例项目
+    let promptParts = ArrayList<String>()
+    let promptOption = (options.get("prompt") ?? "").trimAscii()
+    if (!promptOption.isEmpty()) {
+        promptParts.add(promptOption)
+    }
+    for (arg in nonOptions) {
+        promptParts.add(arg)
+    }
+    let prompt = String.join(promptParts.toArray(), delimiter: " ")
+
     let normalizedMaxRounds = if (maxRounds < 1) { 1 } else { maxRounds }
     return AgentConfig(workspaceRoot, serviceDir, provider, model, normalizedMaxRounds, prompt)
 }
