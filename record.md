@@ -342,7 +342,7 @@ MCP 模块采用**协议/处理分离**的架构：
 
 1. **子包不导入父包**：仓颉 cjpm 约束子包不能循环依赖父包，需要的工具函数在子包内部复制
 2. **协议/类型/纯函数放子包**：子包只包含无副作用的类型定义、协议编解码和纯函数
-3. **处理/业务逻辑留根包**：需要调用多个域函数的处理逻辑（MCP handlers、HTTP routes）直接放在根包
+3. **处理/业务逻辑留根包**：需要调用多个域函数的处理逻辑（MCP handlers）直接放在根包
 4. **兄弟子包可互相导入**：`cangjiecoderagent.client` 可以导入 `cangjiecoderagent.common`
 
 ## 七、文件变更清单
@@ -366,7 +366,7 @@ MCP 模块采用**协议/处理分离**的架构：
 | `json_helpers.cj` | 修改 | 保留领域对象序列化（skillsJson/analysisJson/lspQueryJson 等），通用工具迁入 json 子包 |
 | `workspace_tools.cj` | 修改 | 分析函数迁入 analysis 子包，保留工作区操作和命令执行 |
 | `mcp_handlers.cj` | 修改 | MCP 处理函数、运行时、注册表 |
-| `http_server.cj` | 修改 | 导入更新 |
+| `http_server.cj` | 删除 | HTTP 服务模块已移除，service 专注 MCP |
 | `main.cj` | 修改 | 导入更新 |
 
 ### 智能体（agent/src/）

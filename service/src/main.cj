@@ -20,7 +20,6 @@ func printUsage(): Unit {
     println("  cangjiecoder [OPTIONS] <subcommand> [ARGS...]")
     println("")
     println("Subcommands:")
-    println("  serve                         Start HTTP API server")
     println("  mcp-stdio                     Start MCP stdio server")
     println("  skills                        List all registered skills")
     println("  skills-search <query>         Search skills by keyword")
@@ -39,8 +38,6 @@ func printUsage(): Unit {
     println("  -h, --help       Show help message")
     println("  -V, --version    Show version")
     println("  -r, --repo PATH  Target workspace root (default: service directory)")
-    println("  --host HOST      HTTP server host (default: 127.0.0.1)")
-    println("  -p, --port PORT  HTTP server port (default: 8080)")
     println("")
     println("Environment:")
     println("  STDX_PATH            stdx binary dependency directory")
@@ -52,21 +49,10 @@ func printUsage(): Unit {
 }
 
 // 基于 std.argopt 解析结果构造 AppConfig
-// Full 选项使用 --long 或 -s 形式时 key 不同，需同时检查长短名
 func buildAppConfig(options: HashMap<String, String>): AppConfig {
     let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
     let workspaceRoot = canonicalize(optionValue(options, "repo", "r", fallback: serviceRoot)).toString()
-    let host = options.get("host") ?? "127.0.0.1"
-    var port: UInt16 = 8080
-    let portStr = optionValue(options, "port", "p").trimAscii()
-    if (!portStr.isEmpty()) {
-        try {
-            port = UInt16.parse(portStr)
-        } catch (e: Exception) {
-            port = 8080
-        }
-    }
-    return AppConfig(workspaceRoot, serviceRoot, host, port)
+    return AppConfig(workspaceRoot, serviceRoot)
 }
 
 // 获取第 n 个非选项参数，越界时返回空串
@@ -98,11 +84,6 @@ func printLspQueryResult(result: LspQueryResult): Int64 {
 }
 
 // 各 CLI 子命令的独立处理函数
-
-func cmdServe(config: AppConfig, _: Array<String>): Int64 {
-    startServer(config)
-    return 0
-}
 
 func cmdMcpStdio(config: AppConfig, _: Array<String>): Int64 {
     let runtime = createMcpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
@@ -231,7 +212,6 @@ func cmdHelp(_: AppConfig, _: Array<String>): Int64 {
 // 构建 CLI 子命令名到处理函数的注册表
 func buildSubcommandRegistry(): HashMap<String, CliSubcommandHandler> {
     let registry = HashMap<String, CliSubcommandHandler>()
-    registry["serve"] = cmdServe
     registry["mcp-stdio"] = cmdMcpStdio
     registry["skills"] = cmdSkills
     registry["skills-search"] = cmdSkillsSearch
@@ -254,8 +234,6 @@ main(args: Array<String>): Int64 {
         Full("help", r'h', NoValue),
         Full("version", r'V', NoValue),
         Full("repo", r'r', RequiredValue),
-        Long("host", RequiredValue),
-        Full("port", r'p', RequiredValue),
     ]
 
     var options = HashMap<String, String>()

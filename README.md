@@ -3,7 +3,7 @@
 CangjieCoder 由三个仓颉项目组成：
 
 - `cangjie-tree-sitter/`：tree-sitter 引擎的仓颉封装（动态库），内置 Cangjie 语法插件，支持接入更多语言
-- `service/`：底层 Cangjie AI Coding Service，提供 HTTP / stdio MCP / Cangjie 专用工具能力
+- `service/`：底层 Cangjie AI Coding Service，专注提供 stdio MCP 服务与 Cangjie 专用工具能力
 - `agent/`：面向仓颉项目开发的单智能体应用，通过 stdio MCP 调用 `service`
 
 补充文档：
@@ -11,14 +11,14 @@ CangjieCoder 由三个仓颉项目组成：
 - [`service/README.md`](service/README.md)：`service` 的能力、构建和运行说明
 - [`agent/README.md`](agent/README.md)：`agent` 的使用方式
 - [`mcp.md`](mcp.md)：MCP 工具完整参考与客户端接入示例
-- [`docs/serve-mode-and-roadmap.md`](docs/serve-mode-and-roadmap.md)：历史能力说明与演进背景
+- [`docs/serve-mode-and-roadmap.md`](docs/serve-mode-and-roadmap.md)：历史能力说明与演进背景（HTTP 服务已移除）
 
 ## 目录结构
 
 ```text
 .
 ├── cangjie-tree-sitter/  # tree-sitter 仓颉封装库（动态库，可独立复用）
-├── service/              # MCP / HTTP / Cangjie 工具服务（底层能力）
+├── service/              # MCP 工具服务（底层能力，仅 stdio MCP）
 ├── agent/                # 单智能体应用（大脑）
 ├── examples/             # service 内置模板资源
 ├── docs/                 # 补充说明文档
@@ -83,4 +83,4 @@ cd agent
 cjpm run --run-args "--workspace /absolute/path/to/workspace --prompt 为当前仓颉项目生成重构计划并执行必要的构建测试"
 ```
 
-默认模型为 **Kimi 2.5**（`kimi-k2.5`）。所有 AI Provider、会话记忆与最终总结逻辑由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含 tree-sitter AST 解析、LSP 符号查询、定义跳转、文件创建与 AST 编辑等能力）。
+默认模型为 **Kimi 2.5**（`kimi-k2.5`）。所有 AI Provider、会话记忆与最终总结逻辑由 `agent/` 本地负责，`service/` 专注提供 MCP 工具能力（含 tree-sitter AST 解析、LSP 符号查询、定义跳转、文件创建与 AST 编辑等能力）。
