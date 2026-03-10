@@ -57,32 +57,40 @@ class AnalyzerExtendedTest {
     @TestCase
     func offsetForPointHandlesFirstPosition() {
         // 文件起始位置的偏移量应为 0
-        @Expect(offsetForPoint("hello", 0, 0), 0)
+        @Expect(offsetForPoint("hello", 0, 0) ?? -1, 0)
     }
 
     @TestCase
     func offsetForPointHandlesCRLF() {
         // 应正确处理 CRLF 换行（2 字节换行符）
         let text = "ab\r\ncd"
-        @Expect(offsetForPoint(text, 1, 0), 4)
-        @Expect(offsetForPoint(text, 1, 1), 5)
+        @Expect(offsetForPoint(text, 1, 0) ?? -1, 4)
+        @Expect(offsetForPoint(text, 1, 1) ?? -1, 5)
     }
 
     @TestCase
     func offsetForPointHandlesEndOfFile() {
         // 文件末尾位置应返回文件长度
         let text = "ab"
-        @Expect(offsetForPoint(text, 0, 2), 2)
+        @Expect(offsetForPoint(text, 0, 2) ?? -1, 2)
     }
 
     @TestCase
     func offsetForPointHandlesMultipleNewlines() {
         // 多行文本中的坐标转换
         let text = "line1\nline2\nline3"
-        @Expect(offsetForPoint(text, 0, 0), 0)
-        @Expect(offsetForPoint(text, 1, 0), 6)
-        @Expect(offsetForPoint(text, 2, 0), 12)
-        @Expect(offsetForPoint(text, 2, 5), 17)
+        @Expect(offsetForPoint(text, 0, 0) ?? -1, 0)
+        @Expect(offsetForPoint(text, 1, 0) ?? -1, 6)
+        @Expect(offsetForPoint(text, 2, 0) ?? -1, 12)
+        @Expect(offsetForPoint(text, 2, 5) ?? -1, 17)
+    }
+
+    @TestCase
+    func offsetForPointReturnsNoneForOutOfRange() {
+        // 超出范围的坐标应返回 None
+        let text = "ab"
+        @Expect(offsetForPoint(text, 5, 0) == None)
+        @Expect(offsetForPoint(text, 0, 10) == None)
     }
 
     // ── sliceText 测试 ──────────────────────────────

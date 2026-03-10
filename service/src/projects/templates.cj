@@ -33,13 +33,14 @@ public func findExampleProject(serviceRoot: String, projectId: String): ?Example
     return None
 }
 
-public func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
+// 校验计划创建的路径是否在工作区内，返回 None 表示父目录不存在或路径逃逸了工作区
+public func ensurePlannedWorkspacePath(repoRoot: String, path: String): ?String {
     let canonicalRoot = canonicalize(repoRoot).toString()
     let fullPath = projectsResolveRepoPath(repoRoot, path)
     let plannedPath = Path(fullPath)
     let parentPath = plannedPath.parent
     if (parentPath.toString().isEmpty()) {
-        throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
+        return None
     }
     var existingParentPath = parentPath
     var existingParent = existingParentPath.toString()
@@ -48,39 +49,43 @@ public func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
         existingParent = existingParentPath.toString()
     }
     if (existingParent.isEmpty()) {
-        throw IllegalArgumentException("Parent directory does not exist: ${parentPath}")
+        return None
     }
     // Validate against the nearest existing ancestor so nested new paths such
     // as target/generated/demo can be created safely without precreating every parent.
     let canonicalParent = canonicalize(existingParent).toString()
     if (!canonicalParent.startsWith(canonicalRoot)) {
-        throw IllegalArgumentException("Path escapes repository root: ${path}")
+        return None
     }
     return fullPath
 }
 
 public func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
-    let outputPath = ensurePlannedWorkspacePath(workspaceRoot, destination)
-    if (exists(outputPath)) {
-        return "Destination already exists: ${outputPath}"
-    }
+    if (let Some(outputPath) <- ensurePlannedWorkspacePath(workspaceRoot, destination)) {
+        if (exists(outputPath)) {
+            return "Destination already exists: ${outputPath}"
+        }
 
-    match (findExampleProject(serviceRoot, "json_parser")) {
-        case Some(project) =>
+        if (let Some(project) <- findExampleProject(serviceRoot, "json_parser")) {
             if (!exists(project.templatePath)) {
                 return "JsonParser example template is missing: ${project.templatePath}"
             }
             let outputParent = Path(outputPath).parent.toString()
             if (!outputParent.isEmpty() && !exists(outputParent)) {
-                Directory.create(ensurePlannedWorkspacePath(workspaceRoot, outputParent), recursive: true)
+                if (let Some(parentPath) <- ensurePlannedWorkspacePath(workspaceRoot, outputParent)) {
+                    Directory.create(parentPath, recursive: true)
+                } else {
+                    return "Invalid parent path: ${outputParent}"
+                }
             }
             copy(project.templatePath, to: outputPath)
             removeIfExists("${outputPath}/target", recursive: true)
             removeIfExists("${outputPath}/cjpm.lock")
             return "Bootstrapped JsonParser example at ${outputPath}"
-        case None =>
-            return "JsonParser example template is missing"
+        }
+        return "JsonParser example template is missing"
     }
+    return "Invalid destination path: ${destination}"
 }
 
 // 子包内部工具函数副本（避免对根包循环依赖）

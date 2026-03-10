@@ -11,13 +11,14 @@ import cangjiecoder.projects.*
 const WORKSPACE_COMMAND_OUTPUT_PREVIEW_LINES: Int64 = 20
 let allowedWorkspaceCommands: Array<String> = ["cjpm", "cjc", "cjlint", "tree-sitter", "find", "grep"]
 
-// 解析工作区内的子目录路径，空路径回退到工作区根目录
+// 解析工作区内的子目录路径，空路径回退到工作区根目录。
+// 路径无效时安全回退到工作区根目录，避免抛出异常终止服务。
 func resolveWorkspaceCommandDirectory(repoRoot: String, path: String): String {
     let normalized = path.trimAscii()
     if (normalized.isEmpty()) {
         return repoRoot
     }
-    return ensureWorkspacePath(repoRoot, normalized)
+    return ensureWorkspacePath(repoRoot, normalized) ?? repoRoot
 }
 
 // 列举工作区文件并返回结构化 JSON
@@ -106,26 +107,30 @@ public func workspaceCreateFileJson(repoRoot: String,
                              path: String,
                              content: String,
                              overwrite!: Bool = false): String {
-    let fullPath = ensurePlannedWorkspacePath(repoRoot, path)
-    let existedBefore = exists(fullPath)
-    let parentPath = Path(fullPath).parent.toString()
-    if (!parentPath.isEmpty() && !exists(parentPath)) {
-        Directory.create(parentPath, recursive: true)
+    if (let Some(fullPath) <- ensurePlannedWorkspacePath(repoRoot, path)) {
+        let existedBefore = exists(fullPath)
+        let parentPath = Path(fullPath).parent.toString()
+        if (!parentPath.isEmpty() && !exists(parentPath)) {
+            Directory.create(parentPath, recursive: true)
+        }
+        if (existedBefore && !overwrite) {
+            return toolMessageJson(false,
+                "Workspace file creation rejected",
+                "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
+        }
+        if (existedBefore && overwrite) {
+            globalBackupStore.backup(fullPath)
+        }
+        writeTextFile(fullPath, content)
+        let data = JsonObject()
+        data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))
+        data.put("bytes", JsonInt(content.toArray().size))
+        data.put("overwritten", JsonBool(existedBefore && overwrite))
+        return toolResultJson(true, "Created workspace file", data: data)
     }
-    if (existedBefore && !overwrite) {
-        return toolMessageJson(false,
-            "Workspace file creation rejected",
-            "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
-    }
-    if (existedBefore && overwrite) {
-        globalBackupStore.backup(fullPath)
-    }
-    writeTextFile(fullPath, content)
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(repoRoot, fullPath)))
-    data.put("bytes", JsonInt(content.toArray().size))
-    data.put("overwritten", JsonBool(existedBefore && overwrite))
-    return toolResultJson(true, "Created workspace file", data: data)
+    return toolMessageJson(false,
+        "Workspace file creation rejected",
+        "Invalid path or path escapes workspace: ${path}")
 }
 
 // 检查命令是否在工作区安全白名单中
@@ -161,31 +166,35 @@ public func replaceExactText(repoRoot: String, path: String, oldText: String, ne
     if (oldText.isEmpty()) {
         return "oldText must not be empty"
     }
-    let fullPath = ensureWorkspacePath(repoRoot, path)
-    let current = readTextFile(fullPath)
-    let matches = current.count(oldText)
-    if (matches == 0) {
-        return "oldText not found"
+    if (let Some(fullPath) <- ensureWorkspacePath(repoRoot, path)) {
+        let current = readTextFile(fullPath)
+        let matches = current.count(oldText)
+        if (matches == 0) {
+            return "oldText not found"
+        }
+        if (matches > 1) {
+            return "oldText matched ${matches} locations; refusing ambiguous replacement"
+        }
+        globalBackupStore.backup(fullPath)
+        writeTextFile(fullPath, current.replace(oldText, newText))
+        return "updated ${fullPath}"
     }
-    if (matches > 1) {
-        return "oldText matched ${matches} locations; refusing ambiguous replacement"
-    }
-    globalBackupStore.backup(fullPath)
-    writeTextFile(fullPath, current.replace(oldText, newText))
-    return "updated ${fullPath}"
+    return "Path does not exist or escapes repository root: ${path}"
 }
 
 // ---- 工作区工具处理函数 ----
 
 public func handleReadFile(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
-    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
-    let content = readTextFile(fullPath)
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
-    data.put("content", JsonString(content))
-    data.put("bytes", JsonInt(content.toArray().size))
-    return toolResultJson(true, "Read workspace file", data: data)
+    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
+        let content = readTextFile(fullPath)
+        let data = JsonObject()
+        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("content", JsonString(content))
+        data.put("bytes", JsonInt(content.toArray().size))
+        return toolResultJson(true, "Read workspace file", data: data)
+    }
+    return toolMessageJson(false, "File read failed", "Path does not exist or escapes repository root: ${path}")
 }
 
 public func handleListFiles(ctx: McpToolContext, args: JsonObject): String {

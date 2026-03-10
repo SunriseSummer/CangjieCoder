@@ -23,9 +23,8 @@ var lspCommandCache = HashMap<String, String>()
 // 4. PATH 搜索（全局安装的 LSPServer）
 public func resolveLspCommand(repoRoot: String): ?String {
     // 优先检查缓存
-    match (lspCommandCache.get(repoRoot)) {
-        case Some(cached) => return cached
-        case None => ()
+    if (let Some(cached) <- lspCommandCache.get(repoRoot)) {
+        return cached
     }
 
     // 尝试环境变量配置
@@ -66,20 +65,18 @@ public func clearLspCommandCache(): Unit {
 
 // 检查当前环境是否配置了可用的 LSP 二进制，返回状态和引导信息
 public func inspectLspStatus(repoRoot: String): LspStatus {
-    match (resolveLspCommand(repoRoot)) {
-        case Some(command) =>
-            return LspStatus(
-                true, command,
-                "Detected a Cangjie LSP binary. You can wire it into future symbol/hover/diagnostic sessions via CANGJIE_LSP_COMMAND.",
-                "SDK 1.0.5 ships LSPServer under tools/bin, and the tools-source package can be used for deeper protocol integration."
-            )
-        case None =>
-            return LspStatus(
-                false, "",
-                "No Cangjie LSP binary was detected. Configure CANGJIE_LSP_COMMAND or CANGJIE_SDK_HOME to enable stronger analysis hooks.",
-                "Use the 1.0.5 SDK release or the tools-source package to provide LSPServer."
-            )
+    if (let Some(command) <- resolveLspCommand(repoRoot)) {
+        return LspStatus(
+            true, command,
+            "Detected a Cangjie LSP binary. You can wire it into future symbol/hover/diagnostic sessions via CANGJIE_LSP_COMMAND.",
+            "SDK 1.0.5 ships LSPServer under tools/bin, and the tools-source package can be used for deeper protocol integration."
+        )
     }
+    return LspStatus(
+        false, "",
+        "No Cangjie LSP binary was detected. Configure CANGJIE_LSP_COMMAND or CANGJIE_SDK_HOME to enable stronger analysis hooks.",
+        "Use the 1.0.5 SDK release or the tools-source package to provide LSPServer."
+    )
 }
 
 // ── LSP 帧读取 ───────────────────────────────────────
@@ -161,14 +158,15 @@ public class LspSessionManager {
     var initialized: Bool = false          // 是否已完成 initialize 握手
     var nextRequestId: Int64 = 10          // 下一个请求的 JSON-RPC id
 
-    // 向 LSP 子进程发送一个帧
-    func sendFrame(message: String): Unit {
+    // 向 LSP 子进程发送一个帧，成功返回 true，进程未启动返回 false
+    func sendFrame(message: String): Bool {
         match (process) {
             case Some(proc) =>
                 proc.stdInPipe.write(encodeLspFrame(message).toArray())
                 proc.stdInPipe.flush()
+                return true
             case None =>
-                throw IllegalArgumentException("LSP process not started")
+                return false
         }
     }
 
@@ -200,46 +198,45 @@ public class LspSessionManager {
             return true
         }
         close()
-        let cmd = match (resolveLspCommand(targetRepoRoot)) {
-            case Some(c) => c
-            case None => return false
-        }
-        try {
-            let proc = launch(cmd, [],
-                workingDirectory: Path(targetRepoRoot),
-                stdIn: ProcessRedirect.Pipe,
-                stdOut: ProcessRedirect.Pipe,
-                stdErr: ProcessRedirect.Pipe)
-            process = proc
-            command = cmd
-            repoRoot = targetRepoRoot
+        if (let Some(cmd) <- resolveLspCommand(targetRepoRoot)) {
+            try {
+                let proc = launch(cmd, [],
+                    workingDirectory: Path(targetRepoRoot),
+                    stdIn: ProcessRedirect.Pipe,
+                    stdOut: ProcessRedirect.Pipe,
+                    stdErr: ProcessRedirect.Pipe)
+                process = proc
+                command = cmd
+                repoRoot = targetRepoRoot
 
-            // 发送 initialize 请求并等待应答
-            sendFrame(buildLspRequest(1, "initialize", buildLspInitializeParams(repoRoot: targetRepoRoot)))
-            var found = false
-            var attempts: Int64 = 0
-            while (attempts < LSP_MAX_INITIALIZE_ATTEMPTS && !found) {
-                match (receiveFrame()) {
-                    case Some(frame) =>
+                // 发送 initialize 请求并等待应答
+                sendFrame(buildLspRequest(1, "initialize", buildLspInitializeParams(repoRoot: targetRepoRoot)))
+                var found = false
+                var attempts: Int64 = 0
+                while (attempts < LSP_MAX_INITIALIZE_ATTEMPTS && !found) {
+                    if (let Some(frame) <- receiveFrame()) {
                         if (isResponseWithId(frame, 1)) {
                             found = true
                         }
-                    case None => break
+                    } else {
+                        break
+                    }
+                    attempts += 1
                 }
-                attempts += 1
-            }
-            if (!found) {
+                if (!found) {
+                    close()
+                    return false
+                }
+                // 发送 initialized 通知完成握手
+                sendFrame(buildLspNotification("initialized", JsonObject()))
+                initialized = true
+                return true
+            } catch (_: Exception) {
                 close()
                 return false
             }
-            // 发送 initialized 通知完成握手
-            sendFrame(buildLspNotification("initialized", JsonObject()))
-            initialized = true
-            return true
-        } catch (_: Exception) {
-            close()
-            return false
         }
+        return false
     }
 
     // 通过长驻进程发送 LSP 请求并读取对应响应。
@@ -264,21 +261,20 @@ public class LspSessionManager {
             // 读取响应帧，跳过不匹配的通知帧
             var attempts: Int64 = 0
             while (attempts < LSP_MAX_QUERY_ATTEMPTS) {
-                match (receiveFrame()) {
-                    case Some(frame) =>
-                        if (isResponseWithId(frame, requestId)) {
-                            try {
-                                let response = JsonValue.fromStr(frame).asObject()
-                                return classifyLspResponse(command, method, frame, response)
-                            } catch (_: Exception) {
-                                return LspQueryResult(true, false, command, method,
-                                    "Failed to parse LSP response.", "", JSON_NULL_LITERAL)
-                            }
+                if (let Some(frame) <- receiveFrame()) {
+                    if (isResponseWithId(frame, requestId)) {
+                        try {
+                            let response = JsonValue.fromStr(frame).asObject()
+                            return classifyLspResponse(command, method, frame, response)
+                        } catch (_: Exception) {
+                            return LspQueryResult(true, false, command, method,
+                                "Failed to parse LSP response.", "", JSON_NULL_LITERAL)
                         }
-                    case None =>
-                        initialized = false
-                        return LspQueryResult(true, false, command, method,
-                            "LSP persistent session stream ended unexpectedly.", "", JSON_NULL_LITERAL)
+                    }
+                } else {
+                    initialized = false
+                    return LspQueryResult(true, false, command, method,
+                        "LSP persistent session stream ended unexpectedly.", "", JSON_NULL_LITERAL)
                 }
                 attempts += 1
             }
@@ -303,10 +299,8 @@ public class LspSessionManager {
                 // 关闭时忽略发送错误
             }
         }
-        match (process) {
-            case Some(proc) =>
-                try { proc.terminate(force: true) } catch (_: Exception) {}
-            case None => ()
+        if (let Some(proc) <- process) {
+            try { proc.terminate(force: true) } catch (_: Exception) {}
         }
         process = None
         initialized = false

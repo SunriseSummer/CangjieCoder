@@ -41,18 +41,20 @@ public func sliceText(text: String, start: Int64, endExclusive: Int64): String {
 // ── tree-sitter 输出解析 ──────────────────────────────
 
 // 从 tree-sitter 输出行中解析一个 [row, column] 坐标对，
-// 返回 ((行号, 列号), 下一个搜索起点)
-public func parseNodeCoordinate(line: String, fromIndex: Int64): ((Int64, Int64), Int64) {
-    try {
-        let open = line.indexOf("[", fromIndex).getOrThrow()
-        let comma = line.indexOf(",", open).getOrThrow()
-        let close = line.indexOf("]", comma).getOrThrow()
-        let row = Int64.parse(sliceText(line, open + 1, comma).trimAscii())
-        let column = Int64.parse(sliceText(line, comma + 1, close).trimAscii())
-        return ((row, column), close + 1)
-    } catch (e: Exception) {
-        throw IllegalArgumentException("无法解析 tree-sitter 坐标: ${line}")
+// 返回 None 表示该行格式无效（不中断服务，由调用方选择跳过策略）
+public func parseNodeCoordinate(line: String, fromIndex: Int64): ?((Int64, Int64), Int64) {
+    if (let Some(open) <- line.indexOf("[", fromIndex) &&
+        let Some(comma) <- line.indexOf(",", open) &&
+        let Some(close) <- line.indexOf("]", comma)) {
+        try {
+            let row = Int64.parse(sliceText(line, open + 1, comma).trimAscii())
+            let column = Int64.parse(sliceText(line, comma + 1, close).trimAscii())
+            return ((row, column), close + 1)
+        } catch (_: Exception) {
+            return None
+        }
     }
+    return None
 }
 
 // 从 tree-sitter parse 输出中提取所有匹配指定节点类型的 AST 节点
@@ -64,12 +66,13 @@ public func parseTreeSitterNodeMatches(output: String, nodeType: String): Array<
         if (!trimmed.contains(pattern)) {
             continue
         }
-        try {
-            let ((startLine, startColumn), nextIndex) = parseNodeCoordinate(trimmed, 0)
-            let ((endLine, endColumn), _) = parseNodeCoordinate(trimmed, nextIndex)
-            matches.add(AstNodeMatch(nodeType, startLine, startColumn, endLine, endColumn))
-        } catch (_: Exception) {
-            continue
+        // 使用 if-let 链式解析两组坐标，任一解析失败则跳过该行
+        if (let Some(startCoord) <- parseNodeCoordinate(trimmed, 0)) {
+            let ((startLine, startColumn), nextIndex) = startCoord
+            if (let Some(endCoord) <- parseNodeCoordinate(trimmed, nextIndex)) {
+                let ((endLine, endColumn), _) = endCoord
+                matches.add(AstNodeMatch(nodeType, startLine, startColumn, endLine, endColumn))
+            }
         }
     }
     return matches.toArray()
@@ -78,8 +81,8 @@ public func parseTreeSitterNodeMatches(output: String, nodeType: String): Array<
 // ── 坐标 → 字节偏移转换 ──────────────────────────────
 
 // 将 0-based 行列坐标转换为字节偏移量，同时兼容 LF 和 CRLF 换行符。
-// 当坐标超出文本范围时抛出 IllegalArgumentException。
-public func offsetForPoint(text: String, line: Int64, column: Int64): Int64 {
+// 当坐标超出文本范围时返回 None 而非抛出异常，避免中断服务。
+public func offsetForPoint(text: String, line: Int64, column: Int64): ?Int64 {
     var currentLine: Int64 = 0
     var currentColumn: Int64 = 0
     var offset: Int64 = 0
@@ -113,9 +116,7 @@ public func offsetForPoint(text: String, line: Int64, column: Int64): Int64 {
     if (currentLine == line && currentColumn == column) {
         return offset
     }
-    throw IllegalArgumentException(
-        "行列坐标 ${line}:${column} 超出文件范围（最大可达: ${currentLine}:${currentColumn}）"
-    )
+    return None
 }
 
 // ── AST 节点编辑 ─────────────────────────────────────
@@ -127,32 +128,36 @@ public func editAstNode(repoRoot: String,
                  nodeType: String,
                  replacement: String,
                  index!: Int64 = 0): String {
-    let fullPath = analysisEnsureWorkspacePath(repoRoot, path)
-    let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
-    let (ok, stdout, stderr) = analysisRunCommand(treeSitterCommand, ["parse", fullPath], repoRoot)
-    if (!ok) {
-        return "tree-sitter unavailable for AST edit: ${analysisShortPreview(stderr, maxLines: 8)}"
-    }
-    let matches = parseTreeSitterNodeMatches(stdout, nodeType)
-    if (matches.isEmpty()) {
-        return "No AST node matched type ${nodeType}"
-    }
-    if (index < 0 || index >= matches.size) {
-        return "AST node index ${index} is out of range; matched ${matches.size} nodes"
-    }
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(repoRoot, path)) {
+        let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
+        let (ok, stdout, stderr) = analysisRunCommand(treeSitterCommand, ["parse", fullPath], repoRoot)
+        if (!ok) {
+            return "tree-sitter unavailable for AST edit: ${analysisShortPreview(stderr, maxLines: 8)}"
+        }
+        let matches = parseTreeSitterNodeMatches(stdout, nodeType)
+        if (matches.isEmpty()) {
+            return "No AST node matched type ${nodeType}"
+        }
+        if (index < 0 || index >= matches.size) {
+            return "AST node index ${index} is out of range; matched ${matches.size} nodes"
+        }
 
-    // 定位目标节点的字节范围并执行替换
-    let target = matches[index]
-    let current = analysisReadTextFile(fullPath)
-    let startOffset = offsetForPoint(current, target.startLine, target.startColumn)
-    let endOffset = offsetForPoint(current, target.endLine, target.endColumn)
-    let bytes = current.toArray()
-    let updatedBytes = ArrayList<Byte>()
-    updatedBytes.add(all: bytes.slice(0, startOffset))
-    updatedBytes.add(all: replacement.toArray())
-    updatedBytes.add(all: bytes.slice(endOffset, bytes.size - endOffset))
-    analysisWriteTextFile(fullPath, String.fromUtf8(updatedBytes.toArray()))
-    return "updated AST node ${nodeType} at ${path}:${target.startLine}:${target.startColumn}"
+        // 定位目标节点的字节范围并执行替换
+        let target = matches[index]
+        let current = analysisReadTextFile(fullPath)
+        if (let Some(startOffset) <- offsetForPoint(current, target.startLine, target.startColumn) &&
+            let Some(endOffset) <- offsetForPoint(current, target.endLine, target.endColumn)) {
+            let bytes = current.toArray()
+            let updatedBytes = ArrayList<Byte>()
+            updatedBytes.add(all: bytes.slice(0, startOffset))
+            updatedBytes.add(all: replacement.toArray())
+            updatedBytes.add(all: bytes.slice(endOffset, bytes.size - endOffset))
+            analysisWriteTextFile(fullPath, String.fromUtf8(updatedBytes.toArray()))
+            return "updated AST node ${nodeType} at ${path}:${target.startLine}:${target.startColumn}"
+        }
+        return "AST node coordinate out of range at ${path}"
+    }
+    return "Path does not exist or escapes repository root: ${path}"
 }
 
 // 判断 AST 编辑结果是否成功（不包含任何已知错误前缀）
@@ -160,7 +165,8 @@ public func astEditSucceeded(message: String): Bool {
     return !message.startsWith("tree-sitter unavailable") &&
         !message.contains("No AST node matched") &&
         !message.contains("Path does not exist") &&
-        !message.contains("escapes repository root")
+        !message.contains("escapes repository root") &&
+        !message.contains("AST node coordinate out of range")
 }
 
 // ── 逐级分析 ─────────────────────────────────────────
@@ -168,22 +174,22 @@ public func astEditSucceeded(message: String): Bool {
 // 逐级尝试更丰富的分析器（tree-sitter → cjlint → cjc），
 // 按优先级返回首个可用的分析结果，确保在不同工具链环境下均有分析信号。
 public func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
-    let fullPath = analysisEnsureWorkspacePath(repoRoot, path)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(repoRoot, path)) {
+        // 第一级：tree-sitter 解析
+        if (let Some(result) <- tryTreeSitterAnalysis(fullPath, repoRoot)) {
+            return result
+        }
 
-    // 第一级：tree-sitter 解析
-    let treeSitterResult = tryTreeSitterAnalysis(fullPath, repoRoot)
-    if (let Some(result) <- treeSitterResult) {
-        return result
+        // 第二级：cjlint 静态检查
+        if (let Some(result) <- tryCjlintAnalysis(fullPath, repoRoot)) {
+            return result
+        }
+
+        // 第三级：cjc 编译检查
+        return tryCjcAnalysis(fullPath, repoRoot)
     }
-
-    // 第二级：cjlint 静态检查
-    let lintResult = tryCjlintAnalysis(fullPath, repoRoot)
-    if (let Some(result) <- lintResult) {
-        return result
-    }
-
-    // 第三级：cjc 编译检查
-    return tryCjcAnalysis(fullPath, repoRoot)
+    return AnalysisResult("fallback", false,
+        "Path does not exist or escapes repository root: ${path}", "")
 }
 
 // 尝试使用 tree-sitter 进行分析，返回 None 表示该引擎不可用需继续尝试下一级
@@ -238,16 +244,16 @@ func tryCjcAnalysis(fullPath: String, repoRoot: String): AnalysisResult {
 
 // ── 子包内部工具函数（避免对根包循环依赖） ───────────
 
-// 子包内部的工作区路径安全校验
-func analysisEnsureWorkspacePath(repoRoot: String, path: String): String {
+// 子包内部的工作区路径安全校验，返回 None 表示路径不存在或逃逸了工作区根目录
+func analysisEnsureWorkspacePath(repoRoot: String, path: String): ?String {
     let canonicalRoot = canonicalize(repoRoot).toString()
     let fullPath = if (path.startsWith("/")) { path } else { "${repoRoot}/${path}" }
     if (!exists(fullPath)) {
-        throw IllegalArgumentException("Path does not exist: ${path}")
+        return None
     }
     let canonicalPath = canonicalize(fullPath).toString()
     if (!canonicalPath.startsWith(canonicalRoot)) {
-        throw IllegalArgumentException("Path escapes repository root: ${path}")
+        return None
     }
     return canonicalPath
 }
