@@ -89,7 +89,7 @@ public func formatTaskList(tasks: ArrayList<Task>): String {
 
 // 字符串工具函数
 public func truncateText(text: String, maxLen!: Int64 = 80): String {
-    if (text.size <= maxLen) {
+    if (maxLen < 4 || text.size <= maxLen) {
         return text
     }
     return "${text[0..maxLen - 3]}..."
