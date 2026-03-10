@@ -1,8 +1,8 @@
 # CangjieCoder Service
 
-`service/` 是 Cangjie AI Coder 的底层服务，负责：
+`service/` 是 Cangjie AI Coder 的底层 MCP 服务，负责：
 
-- 暴露 HTTP API 与 stdio MCP Server
+- 通过 stdio MCP Server 对外暴露全部工具能力
 - 提供 Cangjie 专用 Skills、LSP 探测/跳转/符号查询、内置 tree-sitter AST 解析/查询、AST 编辑、工程模板、文件/命令/构建/测试工具
 - 作为 VS Code / Cursor / OpenCode / 自定义 Agent 的可复用后端能力层
 
@@ -12,14 +12,14 @@
 service/
 ├── cjpm.toml       # 项目配置（依赖 cangjie-tree-sitter 库）
 ├── src/
-│   ├── ast/        # AST 服务层（基于 cangjie-tree-sitter 库的薄代理）
 │   ├── analysis/   # 代码分析与 AST 编辑（依赖外部 tree-sitter CLI）
 │   ├── common/     # 共享类型与工具函数
 │   ├── json/       # JSON 解析与序列化工具
 │   ├── lsp/        # LSP 协议、会话管理与查询
 │   ├── mcp/        # MCP 协议层（工具定义、帧编解码）
 │   ├── projects/   # 项目模板管理
-│   └── skills/     # 技能注册表
+│   ├── skills/     # 技能注册表
+│   └── tools/      # MCP 工具处理函数（按类别拆分）
 └── README.md
 ```
 
@@ -47,13 +47,6 @@ cjpm test
 ```
 
 ## 启动方式
-
-### HTTP 服务
-
-```bash
-cd service
-cjpm run --run-args "serve --repo /absolute/path/to/workspace --host 127.0.0.1 --port 8080"
-```
 
 ### stdio MCP 服务
 
@@ -113,7 +106,7 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | `project.list_examples` | 列出可引导的示例项目 |
 | `project.bootstrap_json_parser` | 将 JsonParser 示例复制到工作区 |
 
-> `service` 不再直接承载 AI Provider / 会话记忆能力；这些逻辑已经全部迁移到 `agent/`，因此 `service` 可以作为更纯粹的仓颉工具服务独立复用。
+> `service` 不再直接承载 AI Provider / 会话记忆能力；这些逻辑已经全部迁移到 `agent/`，因此 `service` 可以作为更纯粹的仓颉 MCP 工具服务独立复用。
 
 当前这批能力已经覆盖“读文件/搜文本/创建文件/精确替换/构建测试/符号发现/定义跳转/AST 定点编辑/内置 AST 解析”的自主开发闭环，适合通过 stdio MCP 接入到 OpenCode、Copilot 等宿主中使用。
 

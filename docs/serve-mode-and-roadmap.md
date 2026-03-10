@@ -1,6 +1,8 @@
-# CangjieCoder `serve` 模式使用说明、集成方式与能力规划
+# CangjieCoder 能力说明与演进背景
 
-> 当前仓库已拆分为 `service/` 与 `agent/` 两个仓颉项目。本文中的 `serve` / `mcp-stdio` 能力现在位于 `service/` 下；运行命令时请先 `cd service`，或显式使用 `service/target/...` 二进制。
+> **注意**：本文档为历史参考文档。`service` 已完成 MCP 专项重构，HTTP 服务模块已移除，当前仅通过 stdio MCP 对外暴露工具能力。最新使用方式请参考 [`service/README.md`](../service/README.md) 和 [`mcp.md`](../mcp.md)。
+
+> 当前仓库已拆分为 `service/` 与 `agent/` 两个仓颉项目。`service/` 当前仅提供 `mcp-stdio` 模式；运行命令时请先 `cd service`，或显式使用 `service/target/...` 二进制。
 
 本文面向项目负责人、使用者和后续开发者，回答以下问题：
 

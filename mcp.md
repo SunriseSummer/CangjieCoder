@@ -42,7 +42,7 @@
 
 ## 概述
 
-`service` 是 CangjieCoder 的底层工具服务，通过 **stdio MCP**（Model Context Protocol）或 **HTTP** 对外暴露 22 个工具。这些工具覆盖文件读写、文本搜索替换、构建测试、AST 解析与编辑、LSP 语义查询、技能检索、项目模板和事务回滚等能力。
+`service` 是 CangjieCoder 的底层工具服务，通过 **stdio MCP**（Model Context Protocol）对外暴露 22 个工具。这些工具覆盖文件读写、文本搜索替换、构建测试、AST 解析与编辑、LSP 语义查询、技能检索、项目模板和事务回滚等能力。
 
 **架构要点**：
 - MCP 协议层在 `service/src/mcp/protocol.cj` 中定义工具元数据（名称、参数、描述）

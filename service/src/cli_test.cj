@@ -9,38 +9,34 @@ class CliArgoptTest {
     func buildAppConfigUsesDefaultsWhenNoOptions() {
         let options = HashMap<String, String>()
         let config = buildAppConfig(options)
-        @Expect(config.host, "127.0.0.1")
-    }
-
-    @TestCase
-    func buildAppConfigReadsPortFromOptions() {
-        let options = HashMap<String, String>()
-        options["port"] = "9090"
-        let config = buildAppConfig(options)
-        @Expect(config.port, 9090)
-    }
-
-    @TestCase
-    func buildAppConfigFallsBackOnInvalidPort() {
-        let options = HashMap<String, String>()
-        options["port"] = "not_a_number"
-        let config = buildAppConfig(options)
-        @Expect(config.port, 8080)
-    }
-
-    @TestCase
-    func buildAppConfigReadsHostFromOptions() {
-        let options = HashMap<String, String>()
-        options["host"] = "0.0.0.0"
-        let config = buildAppConfig(options)
-        @Expect(config.host, "0.0.0.0")
+        @Expect(!config.workspaceRoot.isEmpty())
+        @Expect(!config.serviceRoot.isEmpty())
     }
 
     @TestCase
     func nonOptionAtReturnsFallbackOnOutOfBounds() {
-        let args: Array<String> = ["serve"]
-        @Expect(nonOptionAt(args, 0), "serve")
+        let args: Array<String> = ["mcp-stdio"]
+        @Expect(nonOptionAt(args, 0), "mcp-stdio")
         @Expect(nonOptionAt(args, 1), "")
         @Expect(nonOptionAt(args, 99), "")
+    }
+
+    @TestCase
+    func subcommandRegistryIncludesMcpStdio() {
+        let registry = buildSubcommandRegistry()
+        @Expect(registry.contains("mcp-stdio"))
+        @Expect(registry.contains("help"))
+        @Expect(registry.contains("skills"))
+        @Expect(registry.contains("skills-search"))
+        @Expect(registry.contains("examples"))
+        @Expect(registry.contains("analyze"))
+        @Expect(registry.contains("create-file"))
+        @Expect(registry.contains("lsp-status"))
+    }
+
+    @TestCase
+    func subcommandRegistryDoesNotIncludeServe() {
+        let registry = buildSubcommandRegistry()
+        @Expect(!registry.contains("serve"))
     }
 }
