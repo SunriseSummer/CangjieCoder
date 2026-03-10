@@ -396,3 +396,101 @@ MCP 模块采用**协议/处理分离**的架构：
 | `src/treesitter_test.cj` | 新增 | 10 个单元测试 |
 | `treesitter/Makefile` | 新增 | 编译 libtree_sitter_cangjie.so |
 | `treesitter/*.c` | 新增 | tree-sitter 运行时 v0.25.3 + CangjieTreeSitter 1.0.5.2 语法 |
+
+## 四、代码质量优化（Issue #7）
+
+### 4.1 优化目标
+
+对以下 6 个核心文件进行系统性代码质量优化：
+
+- `service/src/analysis/analyzer.cj`
+- `service/src/json/helpers.cj`
+- `service/src/lsp/queries.cj`
+- `service/src/lsp/session.cj`
+- `service/src/mcp/protocol.cj`
+- `service/src/mcp_handlers.cj`
+
+### 4.2 优化内容
+
+#### 4.2.1 降低圈复杂度
+
+**`analyzer.cj` — analyzeCangjieFile 函数拆分**
+
+原始 `analyzeCangjieFile()` 函数包含三级分析器的全部逻辑（tree-sitter → cjlint → cjc），每级都有成功/失败分支，圈复杂度高。
+
+优化后拆分为三个独立的分析函数：
+- `tryTreeSitterAnalysis()` — 尝试 tree-sitter 分析
+- `tryCjlintAnalysis()` — 尝试 cjlint 静态检查
+- `tryCjcAnalysis()` — 尝试 cjc 编译检查（兜底）
+
+主函数通过 `if-let` 链式调用：
+```cangjie
+let treeSitterResult = tryTreeSitterAnalysis(fullPath, repoRoot)
+if (let Some(result) <- treeSitterResult) { return result }
+let lintResult = tryCjlintAnalysis(fullPath, repoRoot)
+if (let Some(result) <- lintResult) { return result }
+return tryCjcAnalysis(fullPath, repoRoot)
+```
+
+**`protocol.cj` — buildToolDefinitions 重构**
+
+原始使用单个巨型数组字面量定义 22 个工具（超过 70 行嵌套），不便阅读和维护。
+
+优化为 `ArrayList` 逐步构建模式，按工具类别分组添加，并在每组前添加分类注释：
+```cangjie
+let defs = ArrayList<ToolDefinition>()
+// 技能检索
+defs.add(ToolDefinition("skills.search", ...))
+// 文件读写
+defs.add(ToolDefinition("workspace.read_file", ...))
+...
+return defs.toArray()
+```
+
+**`json/helpers.cj` — parseJsonBoolField 简化**
+
+移除了多余的 `raw.isEmpty()` 前置判断，因为空字符串既不等于 "true" 也不等于 "false"，最终都会走到 `return fallback` 分支。
+
+#### 4.2.2 补充中文注释
+
+为全部 6 个文件添加了系统性的中文注释，包括：
+
+- **文件级注释**：描述模块职责、提供的核心能力、与其他模块的关系
+- **代码分段标记**：使用 `// ── 段落名 ──` 风格清晰划分代码区域
+- **函数级注释**：描述函数用途、参数含义、返回值语义、边界条件处理
+- **关键逻辑注释**：在复杂分支、状态机转换、协议交互处添加行内注释
+
+注释覆盖率从 ~30% 提升至 ~80%。
+
+#### 4.2.3 代码规范性改进
+
+- 统一了异常变量命名：将无用的 `catch (e: Exception)` 改为 `catch (_: Exception)`
+- 在 `mcpToolCallResultJson()` 中简化了 `isError` 判定逻辑，从嵌套 match 改为直接比较
+- 在 `mcp_handlers.cj` 中为 `McpRuntime` 类的成员变量添加了行内注释说明用途
+
+### 4.3 新增测试用例
+
+新增 `service/src/code_quality_test.cj` 测试文件，包含 5 个测试类、63 个测试用例：
+
+| 测试类 | 测试数量 | 覆盖范围 |
+|--------|----------|----------|
+| `AnalyzerExtendedTest` | 12 | parseTreeSitterNodeMatches、offsetForPoint、sliceText、astEditSucceeded |
+| `JsonHelpersExtendedTest` | 21 | jsonField、parseJsonObject、parseJsonIntField、parseJsonBoolField、jsonStringArrayField、toolResultJson、toolMessageJson、toolCommandResultJson |
+| `LspProtocolExtendedTest` | 15 | LSP 帧编解码往返、findLspResponseById、lspResultToJsonValue、classifyLspResponse、buildLspInitializeParams、fileUri |
+| `McpProtocolExtendedTest` | 12 | buildToolDefinitions 完整性/唯一性/描述检查、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame |
+| `McpHandlersExtendedTest` | 3 | 通知处理、连续请求、版本号验证 |
+
+测试总数从 108 增加到 171，新增 63 个测试用例。
+
+### 4.4 涉及文件
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `service/src/analysis/analyzer.cj` | 优化 | 拆分 analyzeCangjieFile 为三个子函数，补充完整中文注释 |
+| `service/src/json/helpers.cj` | 优化 | 简化 parseJsonBoolField，补充完整中文注释 |
+| `service/src/lsp/queries.cj` | 优化 | 补充完整中文注释和代码分段标记 |
+| `service/src/lsp/session.cj` | 优化 | 补充完整中文注释，为 LspSessionManager 所有方法添加功能说明 |
+| `service/src/mcp/protocol.cj` | 优化 | 重构 buildToolDefinitions 为 ArrayList 模式，补充完整中文注释 |
+| `service/src/mcp_handlers.cj` | 优化 | 补充完整中文注释和代码分段标记 |
+| `service/src/code_quality_test.cj` | 新增 | 63 个新增测试用例 |
+| `record.md` | 更新 | 记录本次优化内容 |
