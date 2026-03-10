@@ -6,3 +6,4 @@ cjpm.lock
 __pycache__/
 *.pyc
 tests/cangjie/generated/
+tests/cangjie/.cache/
