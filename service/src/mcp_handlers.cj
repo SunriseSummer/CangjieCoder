@@ -11,6 +11,7 @@ import cangjiecoder.mcp.*
 import cangjiecoder.skills.*
 import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
+import cangjiecoder.ast.*
 
 // MCP 工具上下文 —— 每次 tools/call 携带的运行时环境
 struct McpToolContext {
@@ -158,6 +159,50 @@ func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
     return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
 }
 
+// 使用内置 tree-sitter 解析仓颉源码并返回 S-expression
+func handleAstParse(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
+    let source = readTextFile(fullPath)
+    let sexp = treeSitterParseSexp(source)
+    if (sexp.startsWith("error:")) {
+        return toolMessageJson(false, "AST parse failed", sexp)
+    }
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+    data.put("sexp", JsonString(sexp))
+    return toolResultJson(true, "AST parse completed", data: data)
+}
+
+// 查询指定类型的 AST 节点
+func handleAstQueryNodes(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let nodeType = jsonField(args, "nodeType")
+    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
+    let source = readTextFile(fullPath)
+    let nodes = treeSitterQueryNodes(source, nodeType)
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+    data.put("nodeType", JsonString(nodeType))
+    data.put("matchCount", JsonInt(nodes.size))
+    data.put("nodes", JsonValue.fromStr(astNodeInfoArrayToJson(nodes)))
+    return toolResultJson(true, "Found ${nodes.size} node(s) of type ${nodeType}", data: data)
+}
+
+// 列出源文件中的命名 AST 节点概览
+func handleAstListNodes(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let maxDepth = parseJsonIntField(args, "maxDepth", fallback: 4)
+    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
+    let source = readTextFile(fullPath)
+    let nodes = treeSitterListNamedNodes(source, maxDepth: maxDepth)
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+    data.put("nodeCount", JsonInt(nodes.size))
+    data.put("nodes", JsonValue.fromStr(astNodeInfoArrayToJson(nodes)))
+    return toolResultJson(true, "Listed ${nodes.size} named AST node(s)", data: data)
+}
+
 // 回滚所有被修改的文件到备份状态
 func handleRollback(ctx: McpToolContext, _: JsonObject): String {
     if (!globalBackupStore.hasBackups()) {
@@ -196,6 +241,9 @@ func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["cangjie.lsp_definition"] = handleLspDefinition
     registry["cangjie.edit_ast_node"] = handleEditAstNode
     registry["workspace.rollback"] = handleRollback
+    registry["cangjie.ast_parse"] = handleAstParse
+    registry["cangjie.ast_query_nodes"] = handleAstQueryNodes
+    registry["cangjie.ast_list_nodes"] = handleAstListNodes
     return registry
 }
 
