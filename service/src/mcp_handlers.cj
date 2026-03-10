@@ -6,6 +6,7 @@ package cangjiecoder
 import std.collection.*
 import std.env.*
 import stdx.encoding.json.*
+import cjtreesitter.{writeStdoutDirect}
 import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.mcp.*
@@ -142,14 +143,12 @@ class McpRuntime {
 // 启动 MCP stdio 服务：循环读取 stdin 帧 → 处理请求 → 写回响应帧
 func startMcpStdioServer(runtime: McpRuntime): Unit {
     let reader = getStdIn()
-    let writer = getStdOut()
     while (true) {
         match (readStdioFrame(reader)) {
             case Some(body) =>
                 match (runtime.handleRequest(body)) {
                     case Some(response) =>
-                        writer.write(encodeMcpFrame(response))
-                        writer.flush()
+                        writeStdoutDirect(encodeMcpFrame(response))
                     case None => ()
                 }
             case None =>

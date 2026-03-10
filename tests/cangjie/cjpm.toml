@@ -1,0 +1,6 @@
+[package]
+name = "testproject"
+version = "0.1.0"
+cjc-version = "1.0.5"
+output-type = "executable"
+description = "Test project for MCP tool testing"

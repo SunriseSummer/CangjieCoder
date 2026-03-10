@@ -67,6 +67,19 @@ foreign {
 }
 
 foreign func free(ptr: CPointer<Unit>): Unit
+foreign func cj_write_stdout(data: CPointer<UInt8>, len: Int32): Int32
+
+// 直接通过系统调用写入 stdout（绕过所有缓冲层）
+public func writeStdoutDirect(content: String): Bool {
+    let bytes = content.toArray()
+    var result = false
+    unsafe {
+        var handle = acquireArrayRawData(bytes)
+        result = cj_write_stdout(CPointer<UInt8>(handle.pointer), Int32(bytes.size)) > 0
+        releaseArrayRawData(handle)
+    }
+    return result
+}
 
 // ============================================================
 // 内部辅助

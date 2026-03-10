@@ -3,3 +3,6 @@ cjpm.lock
 .env
 *.o
 *.so
+__pycache__/
+*.pyc
+tests/cangjie/generated/
