@@ -25,15 +25,17 @@ public func resolveRepoPath(repoRoot: String, path: String): String {
     return "${repoRoot}/${path}"
 }
 
-public func ensureWorkspacePath(repoRoot: String, path: String): String {
+// 校验并解析工作区路径，返回 None 表示路径不存在或逃逸了工作区根目录。
+// 优先使用 Option 语义而非抛出异常，让调用方通过模式匹配选择兜底策略。
+public func ensureWorkspacePath(repoRoot: String, path: String): ?String {
     let canonicalRoot = canonicalize(repoRoot).toString()
     let fullPath = resolveRepoPath(repoRoot, path)
     if (!exists(fullPath)) {
-        throw IllegalArgumentException("Path does not exist: ${path}")
+        return None
     }
     let canonicalPath = canonicalize(fullPath).toString()
     if (!canonicalPath.startsWith(canonicalRoot)) {
-        throw IllegalArgumentException("Path escapes repository root: ${path}")
+        return None
     }
     return canonicalPath
 }

@@ -16,7 +16,7 @@ class AstEditTest {
     @TestCase
     func offsetForPointWalksNewlines() {
         let text = "ab\ncd"
-        @Expect(offsetForPoint(text, 1, 0), 3)
-        @Expect(offsetForPoint(text, 1, 2), 5)
+        @Expect(offsetForPoint(text, 1, 0) ?? -1, 3)
+        @Expect(offsetForPoint(text, 1, 2) ?? -1, 5)
     }
 }

@@ -396,3 +396,178 @@ MCP 模块采用**协议/处理分离**的架构：
 | `src/treesitter_test.cj` | 新增 | 10 个单元测试 |
 | `treesitter/Makefile` | 新增 | 编译 libtree_sitter_cangjie.so |
 | `treesitter/*.c` | 新增 | tree-sitter 运行时 v0.25.3 + CangjieTreeSitter 1.0.5.2 语法 |
+
+## 四、代码质量优化（Issue #7）
+
+### 4.1 优化目标
+
+对以下 6 个核心文件进行系统性代码质量优化：
+
+- `service/src/analysis/analyzer.cj`
+- `service/src/json/helpers.cj`
+- `service/src/lsp/queries.cj`
+- `service/src/lsp/session.cj`
+- `service/src/mcp/protocol.cj`
+- `service/src/mcp_handlers.cj`
+
+### 4.2 优化内容
+
+#### 4.2.1 降低圈复杂度
+
+**`analyzer.cj` — analyzeCangjieFile 函数拆分**
+
+原始 `analyzeCangjieFile()` 函数包含三级分析器的全部逻辑（tree-sitter → cjlint → cjc），每级都有成功/失败分支，圈复杂度高。
+
+优化后拆分为三个独立的分析函数：
+- `tryTreeSitterAnalysis()` — 尝试 tree-sitter 分析
+- `tryCjlintAnalysis()` — 尝试 cjlint 静态检查
+- `tryCjcAnalysis()` — 尝试 cjc 编译检查（兜底）
+
+主函数通过 `if-let` 链式调用：
+```cangjie
+let treeSitterResult = tryTreeSitterAnalysis(fullPath, repoRoot)
+if (let Some(result) <- treeSitterResult) { return result }
+let lintResult = tryCjlintAnalysis(fullPath, repoRoot)
+if (let Some(result) <- lintResult) { return result }
+return tryCjcAnalysis(fullPath, repoRoot)
+```
+
+**`protocol.cj` — buildToolDefinitions 重构**
+
+原始使用单个巨型数组字面量定义 22 个工具（超过 70 行嵌套），不便阅读和维护。
+
+优化为 `ArrayList` 逐步构建模式，按工具类别分组添加，并在每组前添加分类注释：
+```cangjie
+let defs = ArrayList<ToolDefinition>()
+// 技能检索
+defs.add(ToolDefinition("skills.search", ...))
+// 文件读写
+defs.add(ToolDefinition("workspace.read_file", ...))
+...
+return defs.toArray()
+```
+
+**`json/helpers.cj` — parseJsonBoolField 简化**
+
+移除了多余的 `raw.isEmpty()` 前置判断，因为空字符串既不等于 "true" 也不等于 "false"，最终都会走到 `return fallback` 分支。
+
+#### 4.2.2 补充中文注释
+
+为全部 6 个文件添加了系统性的中文注释，包括：
+
+- **文件级注释**：描述模块职责、提供的核心能力、与其他模块的关系
+- **代码分段标记**：使用 `// ── 段落名 ──` 风格清晰划分代码区域
+- **函数级注释**：描述函数用途、参数含义、返回值语义、边界条件处理
+- **关键逻辑注释**：在复杂分支、状态机转换、协议交互处添加行内注释
+
+注释覆盖率从 ~30% 提升至 ~80%。
+
+#### 4.2.3 代码规范性改进
+
+- 统一了异常变量命名：将无用的 `catch (e: Exception)` 改为 `catch (_: Exception)`
+- 在 `mcpToolCallResultJson()` 中简化了 `isError` 判定逻辑，从嵌套 match 改为直接比较
+- 在 `mcp_handlers.cj` 中为 `McpRuntime` 类的成员变量添加了行内注释说明用途
+
+### 4.3 新增测试用例
+
+新增 `service/src/code_quality_test.cj` 测试文件，包含 5 个测试类、63 个测试用例：
+
+| 测试类 | 测试数量 | 覆盖范围 |
+|--------|----------|----------|
+| `AnalyzerExtendedTest` | 12 | parseTreeSitterNodeMatches、offsetForPoint、sliceText、astEditSucceeded |
+| `JsonHelpersExtendedTest` | 21 | jsonField、parseJsonObject、parseJsonIntField、parseJsonBoolField、jsonStringArrayField、toolResultJson、toolMessageJson、toolCommandResultJson |
+| `LspProtocolExtendedTest` | 15 | LSP 帧编解码往返、findLspResponseById、lspResultToJsonValue、classifyLspResponse、buildLspInitializeParams、fileUri |
+| `McpProtocolExtendedTest` | 12 | buildToolDefinitions 完整性/唯一性/描述检查、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame |
+| `McpHandlersExtendedTest` | 3 | 通知处理、连续请求、版本号验证 |
+
+测试总数从 108 增加到 171，新增 63 个测试用例。
+
+### 4.4 涉及文件
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `service/src/analysis/analyzer.cj` | 优化 | 拆分 analyzeCangjieFile 为三个子函数，补充完整中文注释 |
+| `service/src/json/helpers.cj` | 优化 | 简化 parseJsonBoolField，补充完整中文注释 |
+| `service/src/lsp/queries.cj` | 优化 | 补充完整中文注释和代码分段标记 |
+| `service/src/lsp/session.cj` | 优化 | 补充完整中文注释，为 LspSessionManager 所有方法添加功能说明 |
+| `service/src/mcp/protocol.cj` | 优化 | 重构 buildToolDefinitions 为 ArrayList 模式，补充完整中文注释 |
+| `service/src/mcp_handlers.cj` | 优化 | 补充完整中文注释和代码分段标记 |
+| `service/src/code_quality_test.cj` | 新增 | 63+1 个新增测试用例 |
+| `record.md` | 更新 | 记录本次优化内容 |
+
+## 五、异常处理机制优化
+
+### 5.1 设计原则
+
+1. **服务鲁棒性优先**：不造成阻断性影响的问题提供兜底机制，不终止服务
+2. **Option 优先**：优先用 `Option<T>` 表达可失败操作，仅在必要时使用 `throw-try-catch`
+3. **if-let 解构**：解构 Option 时优先用 `if-let` 而非 `match case`
+
+### 5.2 消除的 throw 语句
+
+项目中原有 13 处 `throw` 语句，全部改为返回 `Option` 或结构化错误结果：
+
+| 函数 | 原始行为 | 优化后 |
+|------|----------|--------|
+| `parseNodeCoordinate` | throw 坐标解析失败 | 返回 `?((Int64,Int64),Int64)` |
+| `offsetForPoint` | throw 坐标越界 | 返回 `?Int64` |
+| `ensureWorkspacePath`（4 处副本） | throw 路径不存在/逃逸 | 返回 `?String` |
+| `ensurePlannedWorkspacePath`（3 处 throw） | throw 父目录/逃逸 | 返回 `?String` |
+| `LspSessionManager.sendFrame` | throw 进程未启动 | 返回 `Bool` |
+
+### 5.3 if-let 解构模式
+
+统一使用 `if-let` 替代 `match case` 解构 Option，主要模式：
+
+**多条件组合（&&）**：
+```cangjie
+if (let Some(open) <- line.indexOf("[", fromIndex) &&
+    let Some(comma) <- line.indexOf(",", open) &&
+    let Some(close) <- line.indexOf("]", comma)) {
+    // 三个索引同时有效时执行解析
+}
+```
+
+**嵌套 if-let**：
+```cangjie
+if (let Some(fullPath) <- ensureWorkspacePath(repoRoot, path)) {
+    // 路径有效时执行正常逻辑
+    if (let Some(startOffset) <- offsetForPoint(current, ...) &&
+        let Some(endOffset) <- offsetForPoint(current, ...)) {
+        // 两个偏移都有效时执行替换
+    }
+}
+return "错误兜底消息"
+```
+
+**简洁兜底（??）**：
+```cangjie
+return ensureWorkspacePath(repoRoot, path) ?? repoRoot
+```
+
+### 5.4 保留的 try-catch
+
+以下场景保留 `try-catch` 作为最终安全网：
+
+| 位置 | 原因 |
+|------|------|
+| `callMcpTool` | 顶层工具调度，防止任何未预期异常终止服务 |
+| `McpRuntime.handleRequest` | 顶层请求处理，防止 JSON 解析异常 |
+| `runLspRequestColdStart/probeLspServer` | LSP 子进程交互，防止 I/O 异常 |
+| `analysisRunCommand/lspRunCommand` | 外部命令执行，防止进程启动失败 |
+| `LspSessionManager.ensureInitialized/query` | 长驻进程状态管理，防止通信异常 |
+| `FileBackupStore.rollbackAll` | 文件恢复，静默跳过单文件写入失败 |
+
+### 5.5 涉及文件
+
+| 文件 | 说明 |
+|------|------|
+| `service/src/common/helpers.cj` | `ensureWorkspacePath` → `?String` |
+| `service/src/analysis/analyzer.cj` | `parseNodeCoordinate/offsetForPoint` → Option，`editAstNode/analyzeCangjieFile` 用 if-let |
+| `service/src/lsp/queries.cj` | `lspEnsureWorkspacePath` → `?String`，查询函数用 if-let |
+| `service/src/lsp/session.cj` | `sendFrame` → Bool，`resolveLspCommand/inspectLspStatus/ensureInitialized/query/close` 全部用 if-let |
+| `service/src/projects/templates.cj` | `ensurePlannedWorkspacePath` → `?String`，`bootstrapJsonParserProject` 嵌套 if-let |
+| `service/src/tools/workspace.cj` | 路径校验全部 if-let + ?? 兜底 |
+| `service/src/tools/ast.cj` | AST 工具全部 if-let 兜底 |
+| `service/src/code_quality_test.cj` | 适配 Option 返回值，新增越界测试 |
+| `service/src/ast_edit_test.cj` | 适配 `offsetForPoint` 的 `?Int64` 返回 |

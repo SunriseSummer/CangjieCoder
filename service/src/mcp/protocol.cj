@@ -1,15 +1,24 @@
 // MCP 协议层：工具定义、参数规格、JSON 序列化、帧编解码
+// 定义 22 个 MCP 工具的元数据（名称、描述、参数规格），
+// 以及 JSON-RPC 2.0 响应构造和 MCP stdio 帧编解码能力。
 package cangjiecoder.mcp
 
+import std.collection.*
 import std.convert.*
 import std.env.*
 import stdx.encoding.json.*
 
-// MCP stdio 帧格式常量
+// ── MCP 协议常量 ─────────────────────────────────────
+
+// MCP stdio 帧格式：头部以 \r\n\r\n 分隔，body 通过 Content-Length 指定长度
 public const MCP_HEADER_DELIMITER: String = "\r\n\r\n"
 public const MCP_CONTENT_LENGTH_HEADER: String = "Content-Length:"
+// stdio body 分块读取大小
 public const STDIO_CHUNK_SIZE: Int64 = 4096
 
+// ── 工具定义数据类型 ─────────────────────────────────
+
+// 工具参数规格：定义单个参数的名称、类型、描述和是否必填
 public struct ToolArgSpec {
     public ToolArgSpec(public let name: String,
                        public let kind: String,
@@ -17,91 +26,113 @@ public struct ToolArgSpec {
                        public let required: Bool) {}
 }
 
+// 工具定义：定义单个工具的名称、功能描述和参数列表
 public struct ToolDefinition {
     public ToolDefinition(public let name: String,
                           public let description: String,
                           public let args: Array<ToolArgSpec>) {}
 }
 
+// ── 工具注册表构建 ───────────────────────────────────
+
+// 构建全部 22 个 MCP 工具的元数据定义，分为以下类别：
+// - 技能检索（skills）
+// - 工作区操作（workspace）
+// - 仓颉分析与 AST（cangjie）
+// - LSP 查询（cangjie.lsp_*）
+// - 项目模板（project）
+// - 事务回滚（workspace.rollback）
 public func buildToolDefinitions(): Array<ToolDefinition> {
-    return [
-        ToolDefinition("skills.search", "Search built-in Cangjie skills stored in .github/skills.", [
-            ToolArgSpec("query", "string", "Search keywords for skills lookup.", true)
-        ]),
-        ToolDefinition("workspace.read_file", "Read a file inside the repository root.", [
-            ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true)
-        ]),
-        ToolDefinition("workspace.list_files", "Recursively list files inside the repository root or a subdirectory.", [
-            ToolArgSpec("path", "string", "Optional repository-relative directory to list from. Defaults to the workspace root.", false),
-            ToolArgSpec("limit", "integer", "Maximum number of files to return. Defaults to 200.", false)
-        ]),
-        ToolDefinition("workspace.search_text", "Search for exact text matches inside workspace files.", [
-            ToolArgSpec("query", "string", "Exact text query to search for.", true),
-            ToolArgSpec("path", "string", "Optional repository-relative directory to search in. Defaults to the workspace root.", false),
-            ToolArgSpec("limit", "integer", "Maximum number of matches to return. Defaults to 20.", false)
-        ]),
-        ToolDefinition("workspace.replace_text", "Replace exactly one matched text block inside an existing file.", [
-            ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
-            ToolArgSpec("oldText", "string", "Exact text to replace.", true),
-            ToolArgSpec("newText", "string", "Replacement text.", true)
-        ]),
-        ToolDefinition("workspace.create_file", "Create a new file inside the repository root and create missing parent directories when needed.", [
-            ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
-            ToolArgSpec("content", "string", "Initial file content. Defaults to an empty file when omitted.", false),
-            ToolArgSpec("overwrite", "boolean", "When true, allow overwriting an existing file. Defaults to false.", false)
-        ]),
-        ToolDefinition("workspace.run_build", "Run cjpm build inside the workspace or a subdirectory.", [
-            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
-        ]),
-        ToolDefinition("workspace.run_test", "Run cjpm test inside the workspace or a subdirectory.", [
-            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
-        ]),
-        ToolDefinition("workspace.run_command", "Run a workspace command from a restricted allowlist for agent automation.", [
-            ToolArgSpec("command", "string", "Allowed command name such as cjpm, cjc, cjlint, tree-sitter, grep, or find.", true),
-            ToolArgSpec("args", "array", "Optional positional arguments for the allowed command.", false),
-            ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
-        ]),
-        ToolDefinition("cangjie.analyze_file", "Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true)
-        ]),
-        ToolDefinition("project.list_examples", "List built-in Cangjie example projects that can be bootstrapped into the workspace.", []),
-        ToolDefinition("project.bootstrap_json_parser", "Copy the built-in JsonParser example project into a target workspace path.", [
-            ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
-        ]),
-        ToolDefinition("cangjie.lsp_status", "Inspect whether a Cangjie LSP binary is configured or discoverable.", []),
-        ToolDefinition("cangjie.lsp_probe", "Run a lightweight initialize/shutdown probe against the configured Cangjie LSP server.", []),
-        ToolDefinition("cangjie.lsp_document_symbols", "Query the configured Cangjie LSP server for document symbols in a source file.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true)
-        ]),
-        ToolDefinition("cangjie.lsp_workspace_symbols", "Query the configured Cangjie LSP server for workspace-level symbol matches.", [
-            ToolArgSpec("query", "string", "Symbol name or fuzzy symbol query. Empty string requests a broad symbol scan.", false)
-        ]),
-        ToolDefinition("cangjie.lsp_definition", "Resolve a symbol definition via the configured Cangjie LSP server.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true),
-            ToolArgSpec("line", "integer", "Zero-based source line.", true),
-            ToolArgSpec("column", "integer", "Zero-based source column.", true)
-        ]),
-        ToolDefinition("cangjie.edit_ast_node", "Replace the selected AST node using tree-sitter parse ranges.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true),
-            ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),
-            ToolArgSpec("replacement", "string", "Replacement source text.", true),
-            ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
-        ]),
-        ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", []),
-        ToolDefinition("cangjie.ast_parse", "Parse Cangjie source code via built-in tree-sitter and return the S-expression syntax tree.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true)
-        ]),
-        ToolDefinition("cangjie.ast_query_nodes", "Query all AST nodes matching a given node type from a Cangjie source file.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true),
-            ToolArgSpec("nodeType", "string", "Tree-sitter node type to search for (e.g. functionDefinition, classDefinition).", true)
-        ]),
-        ToolDefinition("cangjie.ast_list_nodes", "List all named AST nodes in a Cangjie source file up to a specified depth.", [
-            ToolArgSpec("path", "string", "Cangjie source file path.", true),
-            ToolArgSpec("maxDepth", "integer", "Maximum tree depth to traverse. Defaults to 4.", false)
-        ])
-    ]
+    let defs = ArrayList<ToolDefinition>()
+    // 技能检索
+    defs.add(ToolDefinition("skills.search", "Search built-in Cangjie skills stored in .github/skills.", [
+        ToolArgSpec("query", "string", "Search keywords for skills lookup.", true)
+    ]))
+    // 文件读写
+    defs.add(ToolDefinition("workspace.read_file", "Read a file inside the repository root.", [
+        ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true)
+    ]))
+    defs.add(ToolDefinition("workspace.list_files", "Recursively list files inside the repository root or a subdirectory.", [
+        ToolArgSpec("path", "string", "Optional repository-relative directory to list from. Defaults to the workspace root.", false),
+        ToolArgSpec("limit", "integer", "Maximum number of files to return. Defaults to 200.", false)
+    ]))
+    defs.add(ToolDefinition("workspace.search_text", "Search for exact text matches inside workspace files.", [
+        ToolArgSpec("query", "string", "Exact text query to search for.", true),
+        ToolArgSpec("path", "string", "Optional repository-relative directory to search in. Defaults to the workspace root.", false),
+        ToolArgSpec("limit", "integer", "Maximum number of matches to return. Defaults to 20.", false)
+    ]))
+    defs.add(ToolDefinition("workspace.replace_text", "Replace exactly one matched text block inside an existing file.", [
+        ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
+        ToolArgSpec("oldText", "string", "Exact text to replace.", true),
+        ToolArgSpec("newText", "string", "Replacement text.", true)
+    ]))
+    defs.add(ToolDefinition("workspace.create_file", "Create a new file inside the repository root and create missing parent directories when needed.", [
+        ToolArgSpec("path", "string", "Repository-relative or absolute in-repo path.", true),
+        ToolArgSpec("content", "string", "Initial file content. Defaults to an empty file when omitted.", false),
+        ToolArgSpec("overwrite", "boolean", "When true, allow overwriting an existing file. Defaults to false.", false)
+    ]))
+    // 构建与测试
+    defs.add(ToolDefinition("workspace.run_build", "Run cjpm build inside the workspace or a subdirectory.", [
+        ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
+    ]))
+    defs.add(ToolDefinition("workspace.run_test", "Run cjpm test inside the workspace or a subdirectory.", [
+        ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
+    ]))
+    defs.add(ToolDefinition("workspace.run_command", "Run a workspace command from a restricted allowlist for agent automation.", [
+        ToolArgSpec("command", "string", "Allowed command name such as cjpm, cjc, cjlint, tree-sitter, grep, or find.", true),
+        ToolArgSpec("args", "array", "Optional positional arguments for the allowed command.", false),
+        ToolArgSpec("path", "string", "Optional repository-relative working directory. Defaults to the workspace root.", false)
+    ]))
+    // 仓颉分析
+    defs.add(ToolDefinition("cangjie.analyze_file", "Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true)
+    ]))
+    // 项目模板
+    defs.add(ToolDefinition("project.list_examples", "List built-in Cangjie example projects that can be bootstrapped into the workspace.", []))
+    defs.add(ToolDefinition("project.bootstrap_json_parser", "Copy the built-in JsonParser example project into a target workspace path.", [
+        ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
+    ]))
+    // LSP 查询
+    defs.add(ToolDefinition("cangjie.lsp_status", "Inspect whether a Cangjie LSP binary is configured or discoverable.", []))
+    defs.add(ToolDefinition("cangjie.lsp_probe", "Run a lightweight initialize/shutdown probe against the configured Cangjie LSP server.", []))
+    defs.add(ToolDefinition("cangjie.lsp_document_symbols", "Query the configured Cangjie LSP server for document symbols in a source file.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true)
+    ]))
+    defs.add(ToolDefinition("cangjie.lsp_workspace_symbols", "Query the configured Cangjie LSP server for workspace-level symbol matches.", [
+        ToolArgSpec("query", "string", "Symbol name or fuzzy symbol query. Empty string requests a broad symbol scan.", false)
+    ]))
+    defs.add(ToolDefinition("cangjie.lsp_definition", "Resolve a symbol definition via the configured Cangjie LSP server.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true),
+        ToolArgSpec("line", "integer", "Zero-based source line.", true),
+        ToolArgSpec("column", "integer", "Zero-based source column.", true)
+    ]))
+    // AST 操作
+    defs.add(ToolDefinition("cangjie.edit_ast_node", "Replace the selected AST node using tree-sitter parse ranges.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true),
+        ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),
+        ToolArgSpec("replacement", "string", "Replacement source text.", true),
+        ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
+    ]))
+    // 事务回滚
+    defs.add(ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", []))
+    // 内置 AST 服务
+    defs.add(ToolDefinition("cangjie.ast_parse", "Parse Cangjie source code via built-in tree-sitter and return the S-expression syntax tree.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true)
+    ]))
+    defs.add(ToolDefinition("cangjie.ast_query_nodes", "Query all AST nodes matching a given node type from a Cangjie source file.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true),
+        ToolArgSpec("nodeType", "string", "Tree-sitter node type to search for (e.g. functionDefinition, classDefinition).", true)
+    ]))
+    defs.add(ToolDefinition("cangjie.ast_list_nodes", "List all named AST nodes in a Cangjie source file up to a specified depth.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true),
+        ToolArgSpec("maxDepth", "integer", "Maximum tree depth to traverse. Defaults to 4.", false)
+    ]))
+    return defs.toArray()
 }
 
+// ── 工具定义 JSON 序列化 ─────────────────────────────
+
+// 将全部工具定义序列化为符合 MCP 协议的 JSON 格式（含 OpenAPI inputSchema）
 public func toolDefinitionsJson(): String {
     let tools = JsonArray()
     for (tool in buildToolDefinitions()) {
@@ -109,6 +140,7 @@ public func toolDefinitionsJson(): String {
         item.put("name", JsonString(tool.name))
         item.put("description", JsonString(tool.description))
 
+        // 构建 OpenAPI 风格的 inputSchema
         let schema = JsonObject()
         schema.put("type", JsonString("object"))
         let properties = JsonObject()
@@ -132,12 +164,14 @@ public func toolDefinitionsJson(): String {
     return root.toString()
 }
 
-// JSON-RPC 2.0 成功响应
+// ── JSON-RPC 2.0 响应构造 ────────────────────────────
+
+// 构造 JSON-RPC 2.0 成功响应
 public func jsonRpcResult(idJson: String, resultJson: String): String {
     return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
 }
 
-// JSON-RPC 2.0 错误响应
+// 构造 JSON-RPC 2.0 错误响应（含错误码和消息）
 public func jsonRpcError(idJson: String, code: Int64, message: String): String {
     let error = JsonObject()
     error.put("code", JsonInt(code))
@@ -145,23 +179,24 @@ public func jsonRpcError(idJson: String, code: Int64, message: String): String {
     return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"error\":${error.toString()}}"
 }
 
-// 将工具调用结果包装为 MCP content blocks 格式
+// ── MCP 工具结果封装 ─────────────────────────────────
+
+// 将工具调用结果包装为 MCP content blocks 格式，
+// 根据 ok 字段判断 isError 状态
 public func mcpToolCallResultJson(content: String): String {
     let toolResult = JsonValue.fromStr(content).asObject()
+
+    // 构建文本内容块
     let textBlocks = JsonArray()
     let textBlock = JsonObject()
     textBlock.put("type", JsonString("text"))
     textBlock.put("text", JsonString(content))
     textBlocks.add(textBlock)
 
+    // 判断工具执行是否出错
     let isError = match (toolResult.get("ok")) {
-        case Some(value) =>
-            match (value.toString()) {
-                case "true" => false
-                case _ => true
-            }
-        case None =>
-            false
+        case Some(value) => value.toString() != "true"
+        case None => false
     }
 
     let result = JsonObject()
@@ -171,13 +206,17 @@ public func mcpToolCallResultJson(content: String): String {
     return result.toString()
 }
 
+// ── MCP 帧编解码 ─────────────────────────────────────
+
 // 将 JSON 消息体编码为 MCP Content-Length 帧
 public func encodeMcpFrame(body: String): String {
     return "${MCP_CONTENT_LENGTH_HEADER} ${body.toArray().size}${MCP_HEADER_DELIMITER}${body}"
 }
 
-// 从标准输入逐字节读取一个 MCP 帧（Content-Length + body）
+// 从标准输入逐行/逐块读取一个 MCP 帧（Content-Length 头 + body）。
+// 返回 None 表示输入流结束或帧格式无效。
 public func readStdioFrame(reader: ConsoleReader): ?String {
+    // 第一阶段：逐行读取头部，寻找 Content-Length 和空行分隔
     var contentLength: Int64 = -1
     while (true) {
         match (reader.readln()) {
@@ -190,7 +229,7 @@ public func readStdioFrame(reader: ConsoleReader): ?String {
                     let rawLength = trimmed[MCP_CONTENT_LENGTH_HEADER.size..trimmed.size].trimAscii()
                     try {
                         contentLength = Int64.parse(rawLength)
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         return None
                     }
                 }
@@ -203,6 +242,7 @@ public func readStdioFrame(reader: ConsoleReader): ?String {
         return None
     }
 
+    // 第二阶段：按 Content-Length 分块读取 body 字节
     var bodyBytes = Array<Byte>(contentLength, repeat: 0)
     var offset: Int64 = 0
     while (offset < contentLength) {
