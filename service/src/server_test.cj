@@ -287,6 +287,8 @@ class ServerMcpTest {
                 case Some(payload) =>
                     @Expect(payload.contains("\"ok\":true"))
                     @Expect(payload.contains("uniqueSearchTarget"))
+                    @Expect(payload.contains("\"line\""))
+                    @Expect(payload.contains("\"preview\""))
                 case None =>
                     @Expect(false)
             }
@@ -466,6 +468,7 @@ class ServerMcpTest {
         match (response) {
             case Some(payload) =>
                 @Expect(payload.contains("\"ok\":false"))
+                @Expect(payload.contains("query must not be empty"))
             case None =>
                 @Expect(false)
         }
