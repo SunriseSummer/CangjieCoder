@@ -1,4 +1,4 @@
-// MCP 工具处理、运行时、注册表和 stdio 服务
+// MCP 运行时、JSON-RPC 方法处理和 stdio 服务
 package cangjiecoder
 
 import std.collection.*
@@ -6,246 +6,8 @@ import std.env.*
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.lsp.*
 import cangjiecoder.mcp.*
-import cangjiecoder.skills.*
-import cangjiecoder.projects.*
-import cangjiecoder.analysis.*
-import cangjiecoder.ast.*
-
-// MCP 工具上下文 —— 每次 tools/call 携带的运行时环境
-struct McpToolContext {
-    public McpToolContext(let workspaceRoot: String,
-                          let serviceRoot: String) {}
-}
-
-// MCP 工具处理函数类型
-type McpToolHandler = (McpToolContext, JsonObject) -> String
-
-// 将 LSP 查询结果包装为标准工具结果
-func lspQueryToolResult(queryJson: String, okSummary: String, failSummary: String): String {
-    let result = parseJsonObject(queryJson)
-    let ok = jsonField(result, "success") == "true"
-    return toolResultJson(ok, if (ok) { okSummary } else { failSummary }, data: result)
-}
-
-// ---- 各 MCP 工具的独立处理函数 ----
-
-func handleSkillsSearch(ctx: McpToolContext, args: JsonObject): String {
-    let query = jsonField(args, "query")
-    let registry = SkillRegistry(ctx.serviceRoot)
-    let matches = registry.search(query, limit: 8)
-    let data = parseJsonObject(skillsJson(matches))
-    return toolResultJson(true, "Skills search completed", data: data)
-}
-
-func handleReadFile(ctx: McpToolContext, args: JsonObject): String {
-    let path = jsonField(args, "path")
-    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
-    let content = readTextFile(fullPath)
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
-    data.put("content", JsonString(content))
-    data.put("bytes", JsonInt(content.toArray().size))
-    return toolResultJson(true, "Read workspace file", data: data)
-}
-
-func handleListFiles(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceListFilesJson(ctx.workspaceRoot,
-        jsonField(args, "path"),
-        limit: parseJsonIntField(args, "limit", fallback: 200))
-}
-
-func handleSearchText(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceSearchTextJson(ctx.workspaceRoot,
-        jsonField(args, "query"),
-        jsonField(args, "path"),
-        limit: parseJsonIntField(args, "limit", fallback: 20))
-}
-
-func handleReplaceText(ctx: McpToolContext, args: JsonObject): String {
-    let message = replaceExactText(ctx.workspaceRoot,
-        jsonField(args, "path"),
-        jsonField(args, "oldText"),
-        jsonField(args, "newText"))
-    let ok = message.startsWith("updated ")
-    return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
-}
-
-func handleCreateFile(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceCreateFileJson(ctx.workspaceRoot,
-        jsonField(args, "path"),
-        jsonField(args, "content"),
-        overwrite: parseJsonBoolField(args, "overwrite", fallback: false))
-}
-
-func handleRunBuild(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
-}
-
-func handleRunTest(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["test"], jsonField(args, "path"))
-}
-
-func handleRunCommand(ctx: McpToolContext, args: JsonObject): String {
-    return workspaceRunCommandJson(ctx.workspaceRoot,
-        jsonField(args, "command"),
-        jsonStringArrayField(args, "args"),
-        jsonField(args, "path"))
-}
-
-func handleAnalyzeFile(ctx: McpToolContext, args: JsonObject): String {
-    let result = analyzeCangjieFile(ctx.workspaceRoot, jsonField(args, "path"))
-    let data = parseJsonObject(analysisJson(result))
-    return toolResultJson(result.success, result.summary, data: data)
-}
-
-func handleListExamples(ctx: McpToolContext, _: JsonObject): String {
-    let data = parseJsonObject(exampleProjectsJson(ctx.serviceRoot))
-    return toolResultJson(true, "Listed example projects", data: data)
-}
-
-func handleBootstrapJsonParser(ctx: McpToolContext, args: JsonObject): String {
-    let message = bootstrapJsonParserProject(ctx.serviceRoot, ctx.workspaceRoot, jsonField(args, "path"))
-    let ok = message.startsWith("Bootstrapped ")
-    return toolMessageJson(ok, if (ok) { "Bootstrapped JsonParser example" } else { "JsonParser bootstrap did not complete" }, message)
-}
-
-func handleLspStatus(ctx: McpToolContext, _: JsonObject): String {
-    let status = parseJsonObject(lspStatusJson(inspectLspStatus(ctx.workspaceRoot)))
-    return toolResultJson(true, "Loaded Cangjie LSP status", data: status)
-}
-
-func handleLspProbe(ctx: McpToolContext, _: JsonObject): String {
-    return lspQueryToolResult(lspProbeJson(probeLspServer(ctx.workspaceRoot)),
-        "LSP probe succeeded", "LSP probe did not complete cleanly")
-}
-
-func handleLspDocumentSymbols(ctx: McpToolContext, args: JsonObject): String {
-    return lspQueryToolResult(
-        lspQueryJson(queryLspDocumentSymbols(ctx.workspaceRoot, jsonField(args, "path"))),
-        "LSP document symbols loaded", "LSP document symbol query failed")
-}
-
-func handleLspWorkspaceSymbols(ctx: McpToolContext, args: JsonObject): String {
-    return lspQueryToolResult(
-        lspQueryJson(queryLspWorkspaceSymbols(ctx.workspaceRoot, jsonField(args, "query"))),
-        "LSP workspace symbols loaded", "LSP workspace symbol query failed")
-}
-
-func handleLspDefinition(ctx: McpToolContext, args: JsonObject): String {
-    return lspQueryToolResult(
-        lspQueryJson(queryLspDefinition(ctx.workspaceRoot,
-            jsonField(args, "path"),
-            parseJsonIntField(args, "line", fallback: 0),
-            parseJsonIntField(args, "column", fallback: 0))),
-        "LSP definition loaded", "LSP definition query failed")
-}
-
-func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
-    // AST 编辑前尝试备份原始文件，支持事务回滚
-    try {
-        let fullPath = ensureWorkspacePath(ctx.workspaceRoot, jsonField(args, "path"))
-        globalBackupStore.backup(fullPath)
-    } catch (e: Exception) {
-        // 路径无效时跳过备份，让 editAstNode 处理错误
-    }
-    let message = editAstNode(ctx.workspaceRoot,
-        jsonField(args, "path"),
-        jsonField(args, "nodeType"),
-        jsonField(args, "replacement"),
-        index: parseJsonIntField(args, "index", fallback: 0))
-    let ok = astEditSucceeded(message)
-    return toolMessageJson(ok, if (ok) { "AST node edit completed" } else { "AST node edit failed" }, message)
-}
-
-// 使用内置 tree-sitter 解析仓颉源码并返回 S-expression
-func handleAstParse(ctx: McpToolContext, args: JsonObject): String {
-    let path = jsonField(args, "path")
-    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
-    let source = readTextFile(fullPath)
-    let sexp = treeSitterParseSexp(source)
-    if (sexp.startsWith("error:")) {
-        return toolMessageJson(false, "AST parse failed", sexp)
-    }
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
-    data.put("sexp", JsonString(sexp))
-    return toolResultJson(true, "AST parse completed", data: data)
-}
-
-// 查询指定类型的 AST 节点
-func handleAstQueryNodes(ctx: McpToolContext, args: JsonObject): String {
-    let path = jsonField(args, "path")
-    let nodeType = jsonField(args, "nodeType")
-    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
-    let source = readTextFile(fullPath)
-    let nodes = treeSitterQueryNodes(source, nodeType)
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
-    data.put("nodeType", JsonString(nodeType))
-    data.put("matchCount", JsonInt(nodes.size))
-    data.put("nodes", JsonValue.fromStr(astNodeInfoArrayToJson(nodes)))
-    return toolResultJson(true, "Found ${nodes.size} node(s) of type ${nodeType}", data: data)
-}
-
-// 列出源文件中的命名 AST 节点概览
-func handleAstListNodes(ctx: McpToolContext, args: JsonObject): String {
-    let path = jsonField(args, "path")
-    let maxDepth = parseJsonIntField(args, "maxDepth", fallback: 4)
-    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
-    let source = readTextFile(fullPath)
-    let nodes = treeSitterListNamedNodes(source, maxDepth: maxDepth)
-    let data = JsonObject()
-    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
-    data.put("nodeCount", JsonInt(nodes.size))
-    data.put("nodes", JsonValue.fromStr(astNodeInfoArrayToJson(nodes)))
-    return toolResultJson(true, "Listed ${nodes.size} named AST node(s)", data: data)
-}
-
-// 回滚所有被修改的文件到备份状态
-func handleRollback(ctx: McpToolContext, _: JsonObject): String {
-    if (!globalBackupStore.hasBackups()) {
-        return toolMessageJson(true, "No file modifications to roll back", "No backups exist")
-    }
-    let restored = globalBackupStore.rollbackAll()
-    let data = JsonObject()
-    let restoredArray = JsonArray()
-    for (path in restored) {
-        restoredArray.add(JsonString(workspaceRelativePath(ctx.workspaceRoot, path)))
-    }
-    data.put("restoredFiles", restoredArray)
-    data.put("count", JsonInt(restored.size))
-    return toolResultJson(true, "Rolled back ${restored.size} file(s) to pre-edit state", data: data)
-}
-
-// 构建 MCP 工具名到处理函数的注册表
-func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
-    let registry = HashMap<String, McpToolHandler>()
-    registry["skills.search"] = handleSkillsSearch
-    registry["workspace.read_file"] = handleReadFile
-    registry["workspace.list_files"] = handleListFiles
-    registry["workspace.search_text"] = handleSearchText
-    registry["workspace.replace_text"] = handleReplaceText
-    registry["workspace.create_file"] = handleCreateFile
-    registry["workspace.run_build"] = handleRunBuild
-    registry["workspace.run_test"] = handleRunTest
-    registry["workspace.run_command"] = handleRunCommand
-    registry["cangjie.analyze_file"] = handleAnalyzeFile
-    registry["project.list_examples"] = handleListExamples
-    registry["project.bootstrap_json_parser"] = handleBootstrapJsonParser
-    registry["cangjie.lsp_status"] = handleLspStatus
-    registry["cangjie.lsp_probe"] = handleLspProbe
-    registry["cangjie.lsp_document_symbols"] = handleLspDocumentSymbols
-    registry["cangjie.lsp_workspace_symbols"] = handleLspWorkspaceSymbols
-    registry["cangjie.lsp_definition"] = handleLspDefinition
-    registry["cangjie.edit_ast_node"] = handleEditAstNode
-    registry["workspace.rollback"] = handleRollback
-    registry["cangjie.ast_parse"] = handleAstParse
-    registry["cangjie.ast_query_nodes"] = handleAstQueryNodes
-    registry["cangjie.ast_list_nodes"] = handleAstListNodes
-    return registry
-}
+import cangjiecoder.tools.*
 
 // MCP 工具调度 —— 在注册表中查找工具名并调用对应处理函数
 func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
@@ -264,7 +26,6 @@ func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
 
 // ---- MCP JSON-RPC 方法处理 ----
 
-// MCP JSON-RPC 方法处理函数类型
 type McpMethodHandler = (McpRuntime, String, JsonObject) -> String
 
 func handleInitialize(_: McpRuntime, idJson: String, _: JsonObject): String {
@@ -303,7 +64,6 @@ func handleToolsCall(runtime: McpRuntime, idJson: String, params: JsonObject): S
     return jsonRpcResult(idJson, mcpToolCallResultJson(callMcpTool(runtime.toolRegistry, ctx, toolName, toolArgs)))
 }
 
-// 构建 MCP JSON-RPC 方法名到处理函数的注册表
 func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
     let registry = HashMap<String, McpMethodHandler>()
     registry["initialize"] = handleInitialize
@@ -316,7 +76,6 @@ func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
 
 // ---- McpRuntime ----
 
-// McpRuntime 封装 MCP 协议的请求处理，被 stdio 和 HTTP 入口共用
 class McpRuntime {
     public let workspaceRoot: String
     public let serviceRoot: String
@@ -330,7 +89,6 @@ class McpRuntime {
         this.toolRegistry = buildMcpToolRegistry()
     }
 
-    // 处理单条 MCP JSON-RPC 请求，返回 None 表示通知类消息无需回复
     public func handleRequest(body: String): ?String {
         try {
             let request = parseJsonObject(body)
@@ -358,7 +116,6 @@ class McpRuntime {
     }
 }
 
-// 启动 MCP stdio 服务，循环读取帧并回写响应
 func startMcpStdioServer(runtime: McpRuntime): Unit {
     let reader = getStdIn()
     let writer = getStdOut()
@@ -377,7 +134,6 @@ func startMcpStdioServer(runtime: McpRuntime): Unit {
     }
 }
 
-// 创建 MCP 运行时的便捷入口
 func createMcpRuntime(workspaceRoot: String, serviceRoot!: String = ""): McpRuntime {
     let effectiveServiceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
     return McpRuntime(workspaceRoot, serviceRoot: effectiveServiceRoot)

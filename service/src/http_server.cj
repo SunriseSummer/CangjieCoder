@@ -9,6 +9,7 @@ import cangjiecoder.lsp.*
 import cangjiecoder.skills.*
 import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
+import cangjiecoder.tools.*
 
 // 启动 HTTP API 服务，注册所有工作区/LSP/MCP 路由
 func startServer(config: AppConfig): Unit {

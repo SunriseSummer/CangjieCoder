@@ -1,5 +1,5 @@
 // 领域 JSON 序列化：将领域对象转换为 JSON 字符串
-package cangjiecoder
+package cangjiecoder.json
 
 import stdx.encoding.json.*
 import cangjiecoder.lsp.*
@@ -8,7 +8,7 @@ import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
 
 // 将 SkillRecord 数组序列化为 JSON 字符串
-func skillsJson(skills: Array<SkillRecord>): String {
+public func skillsJson(skills: Array<SkillRecord>): String {
     let array = JsonArray()
     for (skill in skills) {
         let item = JsonObject()
@@ -25,7 +25,7 @@ func skillsJson(skills: Array<SkillRecord>): String {
 }
 
 // 将 AnalysisResult 序列化为 JSON 字符串
-func analysisJson(result: AnalysisResult): String {
+public func analysisJson(result: AnalysisResult): String {
     let root = JsonObject()
     root.put("engine", JsonString(result.engine))
     root.put("success", JsonBool(result.success))
@@ -35,7 +35,7 @@ func analysisJson(result: AnalysisResult): String {
 }
 
 // 将 example 项目列表序列化为 JSON 字符串
-func exampleProjectsJson(serviceRoot: String): String {
+public func exampleProjectsJson(serviceRoot: String): String {
     let array = JsonArray()
     for (project in listExampleProjects(serviceRoot)) {
         let item = JsonObject()
@@ -50,7 +50,7 @@ func exampleProjectsJson(serviceRoot: String): String {
     return root.toString()
 }
 
-func lspStatusJson(status: LspStatus): String {
+public func lspStatusJson(status: LspStatus): String {
     let root = JsonObject()
     root.put("available", JsonBool(status.available))
     root.put("command", JsonString(status.command))
@@ -59,7 +59,7 @@ func lspStatusJson(status: LspStatus): String {
     return root.toString()
 }
 
-func lspProbeJson(result: LspProbeResult): String {
+public func lspProbeJson(result: LspProbeResult): String {
     let root = JsonObject()
     root.put("available", JsonBool(result.available))
     root.put("success", JsonBool(result.success))
@@ -69,7 +69,7 @@ func lspProbeJson(result: LspProbeResult): String {
     return root.toString()
 }
 
-func lspQueryJson(result: LspQueryResult): String {
+public func lspQueryJson(result: LspQueryResult): String {
     let root = JsonObject()
     root.put("available", JsonBool(result.available))
     root.put("success", JsonBool(result.success))
@@ -80,4 +80,3 @@ func lspQueryJson(result: LspQueryResult): String {
     root.put("result", lspResultToJsonValue(result.resultJson))
     return root.toString()
 }
-

@@ -1,5 +1,5 @@
-// 工作区操作：文件列举、搜索、创建、命令执行
-package cangjiecoder
+// 工作区文件与命令工具
+package cangjiecoder.tools
 
 import std.convert.*
 import std.fs.*
@@ -21,7 +21,7 @@ func resolveWorkspaceCommandDirectory(repoRoot: String, path: String): String {
 }
 
 // 列举工作区文件并返回结构化 JSON
-func workspaceListFilesJson(repoRoot: String, path: String, limit!: Int64 = 200): String {
+public func workspaceListFilesJson(repoRoot: String, path: String, limit!: Int64 = 200): String {
     let startPath = resolveWorkspaceCommandDirectory(repoRoot, path)
     let (status, stdout, stderr) = runCommandDetailedOutput("find", [startPath, "-type", "f"], repoRoot)
     if (status != 0) {
@@ -50,13 +50,12 @@ func workspaceListFilesJson(repoRoot: String, path: String, limit!: Int64 = 200)
 }
 
 // 在工作区中搜索文本并返回匹配结果
-func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limit!: Int64 = 20): String {
+public func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limit!: Int64 = 20): String {
     if (query.trimAscii().isEmpty()) {
         return toolMessageJson(false, "workspace.search_text requires a non-empty query", "query must not be empty")
     }
 
     let startPath = resolveWorkspaceCommandDirectory(repoRoot, path)
-    // -R: 递归搜索; -n: 显示行号; -I: 跳过二进制文件; -F: 固定字符串匹配
     let arguments = ["-R", "-n", "-I", "-F", query, startPath]
     let (status, stdout, stderr) = runCommandDetailedOutput("grep", arguments, repoRoot)
     if (status != 0 && status != 1) {
@@ -103,7 +102,7 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
 }
 
 // 在工作区中创建文件，默认禁止覆盖已有文件
-func workspaceCreateFileJson(repoRoot: String,
+public func workspaceCreateFileJson(repoRoot: String,
                              path: String,
                              content: String,
                              overwrite!: Bool = false): String {
@@ -118,7 +117,6 @@ func workspaceCreateFileJson(repoRoot: String,
             "Workspace file creation rejected",
             "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
     }
-    // 覆盖前自动备份原始内容，支持事务回滚
     if (existedBefore && overwrite) {
         globalBackupStore.backup(fullPath)
     }
@@ -142,7 +140,7 @@ func isAllowedWorkspaceCommand(command: String): Bool {
 }
 
 // 在工作区内执行白名单命令并返回结构化结果
-func workspaceRunCommandJson(repoRoot: String,
+public func workspaceRunCommandJson(repoRoot: String,
                              command: String,
                              arguments: Array<String>,
                              path: String): String {
@@ -156,4 +154,95 @@ func workspaceRunCommandJson(repoRoot: String,
     let workingDirectory = resolveWorkspaceCommandDirectory(repoRoot, path)
     let (status, stdout, stderr) = runCommandDetailedOutput(normalizedCommand, arguments, workingDirectory)
     return toolCommandResultJson(normalizedCommand, arguments, workingDirectory, status, stdout, stderr)
+}
+
+// 精确替换文件中的文本（仅允许唯一匹配）
+public func replaceExactText(repoRoot: String, path: String, oldText: String, newText: String): String {
+    if (oldText.isEmpty()) {
+        return "oldText must not be empty"
+    }
+    let fullPath = ensureWorkspacePath(repoRoot, path)
+    let current = readTextFile(fullPath)
+    let matches = current.count(oldText)
+    if (matches == 0) {
+        return "oldText not found"
+    }
+    if (matches > 1) {
+        return "oldText matched ${matches} locations; refusing ambiguous replacement"
+    }
+    globalBackupStore.backup(fullPath)
+    writeTextFile(fullPath, current.replace(oldText, newText))
+    return "updated ${fullPath}"
+}
+
+// ---- 工作区工具处理函数 ----
+
+public func handleReadFile(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let fullPath = ensureWorkspacePath(ctx.workspaceRoot, path)
+    let content = readTextFile(fullPath)
+    let data = JsonObject()
+    data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+    data.put("content", JsonString(content))
+    data.put("bytes", JsonInt(content.toArray().size))
+    return toolResultJson(true, "Read workspace file", data: data)
+}
+
+public func handleListFiles(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceListFilesJson(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        limit: parseJsonIntField(args, "limit", fallback: 200))
+}
+
+public func handleSearchText(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceSearchTextJson(ctx.workspaceRoot,
+        jsonField(args, "query"),
+        jsonField(args, "path"),
+        limit: parseJsonIntField(args, "limit", fallback: 20))
+}
+
+public func handleReplaceText(ctx: McpToolContext, args: JsonObject): String {
+    let message = replaceExactText(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        jsonField(args, "oldText"),
+        jsonField(args, "newText"))
+    let ok = message.startsWith("updated ")
+    return toolMessageJson(ok, if (ok) { "Updated workspace file text" } else { "Workspace text replacement rejected" }, message)
+}
+
+public func handleCreateFile(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceCreateFileJson(ctx.workspaceRoot,
+        jsonField(args, "path"),
+        jsonField(args, "content"),
+        overwrite: parseJsonBoolField(args, "overwrite", fallback: false))
+}
+
+public func handleRunBuild(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["build"], jsonField(args, "path"))
+}
+
+public func handleRunTest(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot, "cjpm", ["test"], jsonField(args, "path"))
+}
+
+public func handleRunCommand(ctx: McpToolContext, args: JsonObject): String {
+    return workspaceRunCommandJson(ctx.workspaceRoot,
+        jsonField(args, "command"),
+        jsonStringArrayField(args, "args"),
+        jsonField(args, "path"))
+}
+
+public func handleRollback(ctx: McpToolContext, _: JsonObject): String {
+    if (!globalBackupStore.hasBackups()) {
+        return toolMessageJson(true, "No file modifications to roll back", "No backups exist")
+    }
+    let restored = globalBackupStore.rollbackAll()
+    let data = JsonObject()
+    let restoredArray = JsonArray()
+    for (path in restored) {
+        restoredArray.add(JsonString(workspaceRelativePath(ctx.workspaceRoot, path)))
+    }
+    data.put("restoredFiles", restoredArray)
+    data.put("count", JsonInt(restored.size))
+    return toolResultJson(true, "Rolled back ${restored.size} file(s) to pre-edit state", data: data)
 }
