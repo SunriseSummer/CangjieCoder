@@ -38,7 +38,7 @@ public class SkillRegistry {
             return list(limit: limit)
         }
         let normalized = query.toAsciiLower().trimAscii()
-        let tokens = normalized.split(" ", removeEmpty: true)
+        let tokens = tokenizeQuery(normalized)
         let rankedSkills = ArrayList<SkillRecord>()
         let rankedScores = ArrayList<Int64>()
         for (skill in skills) {
@@ -93,6 +93,44 @@ public class SkillRegistry {
             }
         }
     }
+}
+
+// 对搜索查询进行分词，支持中英文混合。
+// 先按空格和常见中文连接词（和/或/与/的/在/中/用/把/了/是）拆分，
+// 再对纯中文片段按 2 字滑动窗口切分为更小的关键词。
+public func tokenizeQuery(normalized: String): Array<String> {
+    // 第一步：按空格拆分
+    let spaceParts = normalized.split(" ", removeEmpty: true)
+    let segments = ArrayList<String>()
+    let particles = ["和", "或", "与", "的", "在", "中", "用", "把", "了", "是",
+                     "如何", "怎么", "什么", "哪些", "可以", "使用", "进行",
+                     "以及", "并且", "通过", "关于"]
+    for (part in spaceParts) {
+        // 在每个 part 中，尝试按中文虚词进一步拆分
+        var current = part
+        for (p in particles) {
+            current = current.replace(p, " ")
+        }
+        for (sub in current.split(" ", removeEmpty: true)) {
+            segments.add(sub)
+        }
+    }
+    // 第二步：对较长片段生成子词
+    let tokens = ArrayList<String>()
+    for (seg in segments) {
+        tokens.add(seg)
+        // 对长度 > 2 字节的中文片段，按 2 字符滑动窗口追加子词
+        let runes = seg.toRuneArray()
+        if (runes.size > 2) {
+            for (i in 0..runes.size - 1) {
+                let bigram = "${runes[i]}${runes[i + 1]}"
+                if (!tokens.contains(bigram) && bigram != seg) {
+                    tokens.add(bigram)
+                }
+            }
+        }
+    }
+    return tokens.toArray()
 }
 
 public func scoreSkill(skill: SkillRecord, normalized: String, tokens: Array<String>): Int64 {

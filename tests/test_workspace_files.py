@@ -41,7 +41,7 @@ def run_tests(client_factory):
         "query": "xyzzy_nonexistent_text_99999"
     })                                                                    # 7
     c.call_tool("workspace.search_text", {
-        "query": "add", "path": "src/utils.cj"
+        "query": "TaskStore", "path": "src/store.cj"
     })                                                                    # 8
     c.call_tool("workspace.search_text", {"query": "func", "limit": 2})   # 9
     c.call_tool("workspace.create_file", {

@@ -6,11 +6,31 @@ package cangjiecoder
 import std.collection.*
 import std.env.*
 import stdx.encoding.json.*
-import cjtreesitter.{writeStdoutDirect}
 import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.mcp.*
 import cangjiecoder.tools.*
+
+// POSIX write 系统调用声明（用于绕过仓颉 ConsoleWriter 的管道缓冲问题）
+foreign func write(fd: Int32, buf: CPointer<UInt8>, count: UIntNative): IntNative
+
+// 直接通过 POSIX write 系统调用写入 stdout（绕过所有缓冲层）
+func writeStdoutDirect(content: String): Unit {
+    let bytes = content.toArray()
+    unsafe {
+        var handle = acquireArrayRawData(bytes)
+        var offset: Int64 = 0
+        while (offset < bytes.size) {
+            let n = write(1, CPointer<UInt8>(handle.pointer) + offset,
+                          UIntNative(bytes.size - offset))
+            if (Int64(n) <= 0) {
+                break
+            }
+            offset += Int64(n)
+        }
+        releaseArrayRawData(handle)
+    }
+}
 
 // ── MCP 工具调度 ─────────────────────────────────────
 

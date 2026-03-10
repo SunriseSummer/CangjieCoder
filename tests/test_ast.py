@@ -22,19 +22,19 @@ def run_tests(client_factory):
     # ── Session 1: read-only AST queries ─────────────────────
     c = client_factory()
     c.start()
-    c.call_tool("cangjie.ast_parse", {"path": "src/utils.cj"})     # 0
+    c.call_tool("cangjie.ast_parse", {"path": "src/models.cj"})    # 0
     c.call_tool("cangjie.ast_parse", {"path": "src/main.cj"})      # 1
     c.call_tool("cangjie.ast_parse", {"path": "no_file.cj"})       # 2
     c.call_tool("cangjie.ast_query_nodes", {                       # 3
-        "path": "src/utils.cj", "nodeType": "function_definition"
+        "path": "src/models.cj", "nodeType": "function_definition"
     })
     c.call_tool("cangjie.ast_query_nodes", {                       # 4
-        "path": "src/utils.cj", "nodeType": "class_definition"
+        "path": "src/models.cj", "nodeType": "class_definition"
     })
     c.call_tool("cangjie.ast_query_nodes", {                       # 5
-        "path": "src/utils.cj", "nodeType": "nonexistent_type_xyz"
+        "path": "src/models.cj", "nodeType": "nonexistent_type_xyz"
     })
-    c.call_tool("cangjie.ast_list_nodes", {"path": "src/utils.cj"})  # 6
+    c.call_tool("cangjie.ast_list_nodes", {"path": "src/models.cj"})  # 6
     c.call_tool("cangjie.ast_list_nodes", {                         # 7
         "path": "src/main.cj", "maxDepth": 2
     })
@@ -70,24 +70,24 @@ def run_tests(client_factory):
             results.append((name, False, str(e)))
 
     # ── Session 2: edit AST node then rollback ───────────────
-    orig_utils = _read_file("src/utils.cj")
+    orig_store = _read_file("src/store.cj")
     c2 = client_factory()
     c2.start()
     c2.call_tool("cangjie.edit_ast_node", {                        # 0
-        "path": "src/utils.cj",
+        "path": "src/store.cj",
         "nodeType": "function_definition",
         "replacement": "func replaced(): Unit {}",
         "index": 0
     })
-    c2.call_tool("workspace.read_file", {"path": "src/utils.cj"})   # 1
+    c2.call_tool("workspace.read_file", {"path": "src/store.cj"})   # 1
     c2.call_tool("cangjie.edit_ast_node", {                         # 2
-        "path": "src/utils.cj",
+        "path": "src/store.cj",
         "nodeType": "function_definition",
         "replacement": "func x(): Unit {}",
         "index": 999
     })
     c2.call_tool("workspace.rollback")                               # 3
-    c2.call_tool("workspace.read_file", {"path": "src/utils.cj"})   # 4
+    c2.call_tool("workspace.read_file", {"path": "src/store.cj"})   # 4
     resp2 = c2.execute()
 
     tests_s2 = [
@@ -99,7 +99,7 @@ def run_tests(client_factory):
         ("edit_ast_invalid_index", lambda: "ok" in resp2[2]),
         ("edit_ast_rollback", lambda: resp2[3]["ok"] is True),
         ("edit_ast_restored", lambda: (
-            resp2[4]["data"]["content"] == orig_utils
+            resp2[4]["data"]["content"] == orig_store
         )),
     ]
     for name, check in tests_s2:

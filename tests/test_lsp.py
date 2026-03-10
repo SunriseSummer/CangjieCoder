@@ -16,12 +16,12 @@ def run_tests(client_factory):
     c.call_tool("cangjie.lsp_status")                              # 0
     c.call_tool("cangjie.lsp_probe")                               # 1
     c.call_tool("cangjie.lsp_document_symbols", {                  # 2
-        "path": "src/utils.cj"
+        "path": "src/models.cj"
     })
     c.call_tool("cangjie.lsp_document_symbols", {                  # 3
         "path": "no_such_file.cj"
     })
-    c.call_tool("cangjie.lsp_workspace_symbols", {"query": "add"})  # 4
+    c.call_tool("cangjie.lsp_workspace_symbols", {"query": "Task"})  # 4
     c.call_tool("cangjie.lsp_workspace_symbols", {"query": ""})     # 5
     c.call_tool("cangjie.lsp_definition", {                         # 6
         "path": "src/main.cj", "line": 1, "column": 1
