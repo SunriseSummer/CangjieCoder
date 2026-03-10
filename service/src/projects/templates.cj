@@ -12,7 +12,7 @@ public struct ExampleProjectSpec {
 }
 
 public func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
-    let examplesRoot = projectsResolveBundledPath(serviceRoot, "examples")
+    let examplesRoot = projectsResolveBundledPath(serviceRoot, "tests")
     return [
         ExampleProjectSpec(
             "json_parser",

@@ -1,11 +1,20 @@
 // 简单 JSON 解析器示例
 package json_parser
 
-import std.collection.*
-
 // JSON 值类型枚举
-public enum JsonType {
+public enum JsonType <: ToString {
     | NULL | BOOL | NUMBER | STRING | ARRAY | OBJECT
+
+    public func toString(): String {
+        match (this) {
+            case NULL => "NULL"
+            case BOOL => "BOOL"
+            case NUMBER => "NUMBER"
+            case STRING => "STRING"
+            case ARRAY => "ARRAY"
+            case OBJECT => "OBJECT"
+        }
+    }
 }
 
 // JSON 解析器：将 JSON 字符串解析为结构化数据
