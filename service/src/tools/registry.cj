@@ -1,0 +1,31 @@
+// MCP 工具注册表：将工具名映射到处理函数
+package cangjiecoder.tools
+
+import std.collection.*
+
+public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
+    let registry = HashMap<String, McpToolHandler>()
+    registry["skills.search"] = handleSkillsSearch
+    registry["workspace.read_file"] = handleReadFile
+    registry["workspace.list_files"] = handleListFiles
+    registry["workspace.search_text"] = handleSearchText
+    registry["workspace.replace_text"] = handleReplaceText
+    registry["workspace.create_file"] = handleCreateFile
+    registry["workspace.run_build"] = handleRunBuild
+    registry["workspace.run_test"] = handleRunTest
+    registry["workspace.run_command"] = handleRunCommand
+    registry["cangjie.analyze_file"] = handleAnalyzeFile
+    registry["project.list_examples"] = handleListExamples
+    registry["project.bootstrap_json_parser"] = handleBootstrapJsonParser
+    registry["cangjie.lsp_status"] = handleLspStatus
+    registry["cangjie.lsp_probe"] = handleLspProbe
+    registry["cangjie.lsp_document_symbols"] = handleLspDocumentSymbols
+    registry["cangjie.lsp_workspace_symbols"] = handleLspWorkspaceSymbols
+    registry["cangjie.lsp_definition"] = handleLspDefinition
+    registry["cangjie.edit_ast_node"] = handleEditAstNode
+    registry["workspace.rollback"] = handleRollback
+    registry["cangjie.ast_parse"] = handleAstParse
+    registry["cangjie.ast_query_nodes"] = handleAstQueryNodes
+    registry["cangjie.ast_list_nodes"] = handleAstListNodes
+    return registry
+}

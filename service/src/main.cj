@@ -10,6 +10,7 @@ import cangjiecoder.lsp.*
 import cangjiecoder.skills.*
 import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
+import cangjiecoder.tools.*
 
 // 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {

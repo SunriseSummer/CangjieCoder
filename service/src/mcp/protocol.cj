@@ -87,7 +87,18 @@ public func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("replacement", "string", "Replacement source text.", true),
             ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
         ]),
-        ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", [])
+        ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", []),
+        ToolDefinition("cangjie.ast_parse", "Parse Cangjie source code via built-in tree-sitter and return the S-expression syntax tree.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true)
+        ]),
+        ToolDefinition("cangjie.ast_query_nodes", "Query all AST nodes matching a given node type from a Cangjie source file.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true),
+            ToolArgSpec("nodeType", "string", "Tree-sitter node type to search for (e.g. functionDefinition, classDefinition).", true)
+        ]),
+        ToolDefinition("cangjie.ast_list_nodes", "List all named AST nodes in a Cangjie source file up to a specified depth.", [
+            ToolArgSpec("path", "string", "Cangjie source file path.", true),
+            ToolArgSpec("maxDepth", "integer", "Maximum tree depth to traverse. Defaults to 4.", false)
+        ])
     ]
 }
 

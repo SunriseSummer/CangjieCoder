@@ -1,3 +1,5 @@
 target/
 cjpm.lock
 .env
+*.o
+*.so

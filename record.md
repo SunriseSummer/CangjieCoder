@@ -117,9 +117,89 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
 | `runAgent` | `runner.cj` | 提取 `executeRoundSteps()` 和 `generateFinalReport()`，消除工具执行循环和最终报告的内联逻辑 |
 | `buildFallbackPlan` | `planner/planning.cj` | 提取 `isNewProjectRequest()`，将 6 条件的项目检测逻辑分离 |
 
-## 三、测试覆盖
+## 三、tree-sitter 内置 AST 服务
 
-本次新增 21 个单元测试，总计 69 个测试全部通过：
+### 3.1 cangjie-tree-sitter 独立库
+
+将 tree-sitter 引擎封装为独立的仓颉项目 `cangjie-tree-sitter/`（输出动态库），类似 Rust / Python 等主流语言的 tree-sitter 绑定做法：
+
+**项目结构**：
+```text
+cangjie-tree-sitter/
+├── cjpm.toml           # output-type = "dynamic"，包名 cjtreesitter
+├── src/
+│   ├── treesitter.cj       # FFI 声明 + 公共 API
+│   └── treesitter_test.cj  # 10 个单元测试
+└── treesitter/             # C 源码
+    ├── Makefile            # 编译 libtree_sitter_cangjie.so
+    ├── ts_lib.c            # tree-sitter 运行时 v0.25.3
+    ├── cangjie_parser.c    # CangjieTreeSitter 1.0.5.2 语法
+    ├── cangjie_scanner.c   # CangjieTreeSitter 外部扫描器
+    └── ...                 # tree-sitter 内部头文件和源文件
+```
+
+**C FFI 层**：
+- `@C struct TSPoint`/`TSNode`/`TSTreeCursor` —— 与 tree-sitter C API 结构体一一映射
+- `foreign` 块声明 20+ 个 tree-sitter 核心函数（parser 生命周期、节点遍历、游标操作等）
+- 内存管理正确配对：`ts_parser_new()`/`ts_parser_delete()`、`acquireArrayRawData()`/`releaseArrayRawData()`、`free()` 释放 `ts_node_string()` 返回的 C 字符串
+
+**公共 API**（所有函数支持可选 `language!` 参数，默认使用 `cangjieLanguage()`）：
+
+| 函数 | 说明 |
+|------|------|
+| `cangjieLanguage()` | 返回内置仓颉语法的 `CPointer<Unit>` |
+| `parseSexp(source, language!)` | 解析源码并返回 S-expression 字符串 |
+| `parseRootInfo(source, language!)` | 解析并返回根节点的 `NodeInfo` |
+| `queryNodes(source, nodeType, language!)` | 递归查询指定类型的所有节点 |
+| `listNamedNodes(source, maxDepth!, language!)` | 收集命名节点概览（限制深度） |
+| `nodeInfoToJson(node)` | 单个 `NodeInfo` 序列化为 JSON |
+| `nodeInfoArrayToJson(nodes)` | `NodeInfo` 数组序列化为 JSON |
+
+**多语言插件设计**：库默认集成 Cangjie 语法插件，但也支持接入其他语言的 tree-sitter 语法插件。只需传入不同的 `language!` 参数（由外部 tree-sitter 语法库提供的 `CPointer<Unit>`），即可复用同一套解析 API。
+
+### 3.2 service 集成
+
+`service` 通过 `[dependencies] cjtreesitter = { path = "../cangjie-tree-sitter" }` 依赖该库，`service/src/ast/ast.cj` 作为薄代理层（零 unsafe 代码）：
+- 类型别名 `AstNodeInfo = NodeInfo`
+- 代理函数 `treeSitterParseSexp()` / `treeSitterQueryNodes()` / `treeSitterListNamedNodes()` 等
+
+新增 3 个 MCP 工具：
+
+| 工具名 | 功能 |
+|--------|------|
+| `cangjie.ast_parse` | 解析仓颉源码，返回完整 S-expression AST |
+| `cangjie.ast_query_nodes` | 按节点类型查询所有匹配节点及位置信息 |
+| `cangjie.ast_list_nodes` | 列出命名 AST 节点概览（可配置深度） |
+
+### 3.3 与现有 AST 编辑的关系
+
+- `cangjie.edit_ast_node` 和 `cangjie.analyze_file` 仍依赖**外部** tree-sitter CLI（通过 `$TREE_SITTER_CANGJIE` 环境变量）
+- `cangjie.ast_parse`/`cangjie.ast_query_nodes`/`cangjie.ast_list_nodes` 使用**内置** tree-sitter（通过 `cangjie-tree-sitter` 库），无需外部工具
+
+### 3.4 workspace 更新
+
+根目录 `cjpm.toml` 更新为 3 成员 workspace：
+
+```toml
+[workspace]
+members = ["cangjie-tree-sitter", "service", "agent"]
+build-members = ["cangjie-tree-sitter", "service", "agent"]
+test-members = ["cangjie-tree-sitter", "service", "agent"]
+```
+
+### 3.5 测试覆盖
+
+新增 23 个测试用例，总计 92 个测试全部通过：
+
+| 测试类别 | 数量 | 位置 | 测试内容 |
+|----------|------|------|----------|
+| 库单元测试 | 10 | `cangjie-tree-sitter` | S-expression 解析、空源码处理、根节点类型、节点类型查询、无匹配空结果、命名节点列举、JSON 序列化、语言接口非空、显式语言参数 |
+| 服务单元测试 | 8 | `service` | 通过代理层的 S-expression 解析、根节点类型、节点查询、JSON 序列化 |
+| MCP 集成测试 | 5 | `service` | AST 解析工具调用、节点查询工具调用、节点列举工具调用、工具注册表覆盖、工具定义包含 AST 工具 |
+
+## 四、测试覆盖
+
+本次新增 44 个单元测试（含 tree-sitter 库 10 + tree-sitter service 集成 13 + 原有 21），总计 92 个测试全部通过：
 
 | 测试类别 | 新增数 | 测试内容 |
 |----------|--------|----------|
@@ -133,7 +213,7 @@ CangjieCoder 是一个基于仓颉语言的 AI 编程助手，由两个核心模
 | LSP 缓存 | 1 | 缓存命中/清除/刷新 |
 | MCP 回滚工具 | 3 | 运行时回滚恢复、无备份报告空、工具注册 |
 
-## 四、LSP 连接模型说明
+## 五、LSP 连接模型说明
 
 **当前状态**：已实现**持久化长连接**。
 
@@ -152,9 +232,9 @@ LSP 连接经历了两个阶段：
 - 进程崩溃或流关闭 → 标记会话失效，下次查询重新初始化
 - `closeLspSession()` 和 `clearLspCommandCache()` 供测试和环境变更使用
 
-## 五、子包拆分
+## 六、子包拆分
 
-### 5.1 服务共享子包（`cangjiecoder.common`）
+### 6.1 服务共享子包（`cangjiecoder.common`）
 
 将核心类型和工具函数提取到 `service/src/common/`：
 
@@ -163,7 +243,7 @@ LSP 连接经历了两个阶段：
 | `types.cj` | AppConfig、APP_VERSION — 应用配置和版本常量 |
 | `helpers.cj` | 路径处理（resolveBundledPath/resolveRepoPath/ensureWorkspacePath/workspaceRelativePath）、文件读写（readTextFile/writeTextFile）、文本预览（shortPreview）、命令执行（runCommandDetailedOutput/runCommandWithCapturedOutput） |
 
-### 5.2 JSON 工具子包（`cangjiecoder.json`）
+### 6.2 JSON 工具子包（`cangjiecoder.json`）
 
 将通用 JSON 解析/序列化工具提取到 `service/src/json/`：
 
@@ -171,7 +251,7 @@ LSP 连接经历了两个阶段：
 |------|------|
 | `helpers.cj` | jsonField、parseJsonObject、parseJsonIntField、parseJsonBoolField、jsonStringArrayField、toolResultJson、toolMessageJson、toolCommandResultJson |
 
-### 5.3 技能子包（`cangjiecoder.skills`）
+### 6.3 技能子包（`cangjiecoder.skills`）
 
 将技能注册表逻辑提取到 `service/src/skills/`：
 
@@ -179,7 +259,7 @@ LSP 连接经历了两个阶段：
 |------|------|
 | `registry.cj` | SkillRecord 类型、SkillRegistry 类（加载/搜索/排名/上下文构建）、scoreSkill、parseSkill |
 
-### 5.4 项目模板子包（`cangjiecoder.projects`）
+### 6.4 项目模板子包（`cangjiecoder.projects`）
 
 将项目模板管理逻辑提取到 `service/src/projects/`：
 
@@ -187,7 +267,7 @@ LSP 连接经历了两个阶段：
 |------|------|
 | `templates.cj` | ExampleProjectSpec 类型、listExampleProjects、findExampleProject、ensurePlannedWorkspacePath、bootstrapJsonParserProject |
 
-### 5.5 代码分析子包（`cangjiecoder.analysis`）
+### 6.5 代码分析子包（`cangjiecoder.analysis`）
 
 将 AST 编辑和代码分析逻辑提取到 `service/src/analysis/`：
 
@@ -195,7 +275,7 @@ LSP 连接经历了两个阶段：
 |------|------|
 | `analyzer.cj` | AstNodeMatch/AnalysisResult 类型、AST 解析（parseTreeSitterNodeMatches/offsetForPoint）、editAstNode、astEditSucceeded、analyzeCangjieFile |
 
-### 5.6 LSP 子包（`cangjiecoder.lsp`）
+### 6.6 LSP 子包（`cangjiecoder.lsp`）
 
 将原 `service/src/lsp.cj`（655 行）拆分为 `service/src/lsp/` 子包：
 
@@ -205,7 +285,7 @@ LSP 连接经历了两个阶段：
 | `session.cj` | LspSessionManager 长驻会话管理、命令发现与缓存、帧流读取 |
 | `queries.cj` | 高层查询接口（document symbols/workspace symbols/definition）、冷启动回退、LSP 探测 |
 
-### 5.7 MCP 子包（`cangjiecoder.mcp`）
+### 6.7 MCP 子包（`cangjiecoder.mcp`）
 
 MCP 模块采用**协议/处理分离**的架构：
 
@@ -214,7 +294,7 @@ MCP 模块采用**协议/处理分离**的架构：
 | `mcp/protocol.cj` | 子包 | ToolArgSpec/ToolDefinition、buildToolDefinitions、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame/readStdioFrame |
 | `mcp_handlers.cj` | 根包 | McpToolContext、所有 handle* 处理函数、buildMcpToolRegistry/buildMcpMethodRegistry、McpRuntime、startMcpStdioServer、createMcpRuntime |
 
-### 5.8 Agent 共享类型子包（`cangjiecoderagent.common`）
+### 6.8 Agent 共享类型子包（`cangjiecoderagent.common`）
 
 将共享类型和工具函数提取到 `agent/src/common/`：
 
@@ -223,7 +303,7 @@ MCP 模块采用**协议/处理分离**的架构：
 | `types.cj` | AgentConfig、PlannedToolCall、AgentPlan、ToolExecution、ModelTurn、AgentPlanningContext、MAX_PLAN_STEPS |
 | `helpers.cj` | jsonField、parseJsonObject、shortPreview、extractStructuredData、jsonArrayStrings、containsAny、shellQuote |
 
-### 5.9 AI 对话子包（`cangjiecoderagent.ai`）
+### 6.9 AI 对话子包（`cangjiecoderagent.ai`）
 
 将 AI 对话管理和提供者逻辑提取到 `agent/src/ai/`：
 
@@ -232,7 +312,7 @@ MCP 模块采用**协议/处理分离**的架构：
 | `conversation.cj` | ConversationTurn/ConversationSession/ConversationStore — 会话管理、token 预算截断、持久化序列化/反序列化 |
 | `providers.cj` | ProviderSpec — 提供者配置、API 调用（chatWithProvider）、响应解析、系统提示词、conversationTurn |
 
-### 5.10 MCP 客户端子包（`cangjiecoderagent.client`）
+### 6.10 MCP 客户端子包（`cangjiecoderagent.client`）
 
 将 MCP 客户端通信逻辑提取到 `agent/src/client/`：
 
@@ -240,7 +320,7 @@ MCP 模块采用**协议/处理分离**的架构：
 |------|------|
 | `service_client.cj` | ServiceClient 类（MCP stdio 调用）、帧编解码（encodeMcpFrame/extractMcpBodies）、JSON-RPC 请求构建、服务命令解析 |
 
-### 5.11 规划器子包（`cangjiecoderagent.planner`）
+### 6.11 规划器子包（`cangjiecoderagent.planner`）
 
 将规划逻辑提取到 `agent/src/planner/`：
 
@@ -250,6 +330,14 @@ MCP 模块采用**协议/处理分离**的架构：
 | `prompts.cj` | buildPlanPrompt、buildReplanPrompt、buildCompactWorkspaceSummary — 提示词构建 |
 | `planning.cj` | parsePlan、buildFallbackPlan、normalizePlanSteps — 计划解析与回退逻辑 |
 
+### 6.12 AST 服务子包（`cangjiecoder.ast`）
+
+`service/src/ast/ast.cj` 作为 `cangjie-tree-sitter` 库的薄代理：
+
+| 文件 | 职责 |
+|------|------|
+| `ast.cj` | 类型别名 `AstNodeInfo = NodeInfo`、代理函数 `treeSitterParseSexp`/`treeSitterQueryNodes`/`treeSitterListNamedNodes`/`astNodeInfoToJson`/`astNodeInfoArrayToJson`，零 unsafe 代码 |
+
 ### 子包设计原则
 
 1. **子包不导入父包**：仓颉 cjpm 约束子包不能循环依赖父包，需要的工具函数在子包内部复制
@@ -257,7 +345,7 @@ MCP 模块采用**协议/处理分离**的架构：
 3. **处理/业务逻辑留根包**：需要调用多个域函数的处理逻辑（MCP handlers、HTTP routes）直接放在根包
 4. **兄弟子包可互相导入**：`cangjiecoderagent.client` 可以导入 `cangjiecoderagent.common`
 
-## 六、文件变更清单
+## 七、文件变更清单
 
 ### 服务端（service/src/）
 
@@ -273,6 +361,7 @@ MCP 模块采用**协议/处理分离**的架构：
 | `lsp/session.cj` | 新增 | LspSessionManager 长驻会话管理 |
 | `lsp/queries.cj` | 新增 | LSP 高层查询接口、冷启动回退 |
 | `mcp/protocol.cj` | 新增 | MCP 工具定义、JSON-RPC 辅助、帧编解码 |
+| `ast/ast.cj` | 新增 | cangjie-tree-sitter 库的薄代理层，零 unsafe 代码 |
 | `core.cj` | 修改 | 保留 FileBackupStore 和 replaceExactText，其余迁入子包 |
 | `json_helpers.cj` | 修改 | 保留领域对象序列化（skillsJson/analysisJson/lspQueryJson 等），通用工具迁入 json 子包 |
 | `workspace_tools.cj` | 修改 | 分析函数迁入 analysis 子包，保留工作区操作和命令执行 |
@@ -297,3 +386,13 @@ MCP 模块采用**协议/处理分离**的架构：
 | `runner.cj` | 修改 | 导入更新 |
 | `executor.cj` | 修改 | 导入更新 |
 | `record.md` | 修改 | 更新本文档 |
+
+### cangjie-tree-sitter 库
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `cjpm.toml` | 新增 | 动态库配置（output-type = "dynamic"），ffi.c 配置 |
+| `src/treesitter.cj` | 新增 | C FFI 声明（TSPoint/TSNode/TSTreeCursor/20+ 函数）、公共 API（parseSexp/queryNodes/listNamedNodes 等）、JSON 序列化 |
+| `src/treesitter_test.cj` | 新增 | 10 个单元测试 |
+| `treesitter/Makefile` | 新增 | 编译 libtree_sitter_cangjie.so |
+| `treesitter/*.c` | 新增 | tree-sitter 运行时 v0.25.3 + CangjieTreeSitter 1.0.5.2 语法 |

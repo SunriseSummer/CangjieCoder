@@ -8,6 +8,7 @@ import cangjiecoder.lsp.*
 import cangjiecoder.mcp.*
 import cangjiecoder.skills.*
 import cangjiecoder.analysis.*
+import cangjiecoder.tools.*
 
 @Test
 class ServerMcpTest {

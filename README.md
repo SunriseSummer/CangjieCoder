@@ -1,7 +1,8 @@
 # CangjieCoder
 
-CangjieCoder 现在拆分为两个仓颉项目：
+CangjieCoder 由三个仓颉项目组成：
 
+- `cangjie-tree-sitter/`：tree-sitter 引擎的仓颉封装（动态库），内置 Cangjie 语法插件，支持接入更多语言
 - `service/`：底层 Cangjie AI Coding Service，提供 HTTP / stdio MCP / Cangjie 专用工具能力
 - `agent/`：面向仓颉项目开发的单智能体应用，通过 stdio MCP 调用 `service`
 
@@ -9,24 +10,25 @@ CangjieCoder 现在拆分为两个仓颉项目：
 
 - [`service/README.md`](service/README.md)：`service` 的能力、构建和运行说明
 - [`agent/README.md`](agent/README.md)：`agent` 的使用方式
-- [`mcp.md`](mcp.md)：在 VS Code / Cursor / OpenCode 中配置 `service` MCP 的示例
+- [`mcp.md`](mcp.md)：MCP 工具完整参考与客户端接入示例
 - [`docs/serve-mode-and-roadmap.md`](docs/serve-mode-and-roadmap.md)：历史能力说明与演进背景
 
 ## 目录结构
 
 ```text
 .
-├── agent/          # 单智能体应用（大脑）
-├── service/        # MCP / HTTP / Cangjie 工具服务（底层能力）
-├── examples/       # service 内置模板资源
-├── docs/           # 补充说明文档
-├── .github/skills/ # 仓颉 Skills 语料
-└── cangjie-docs-full/
+├── cangjie-tree-sitter/  # tree-sitter 仓颉封装库（动态库，可独立复用）
+├── service/              # MCP / HTTP / Cangjie 工具服务（底层能力）
+├── agent/                # 单智能体应用（大脑）
+├── examples/             # service 内置模板资源
+├── docs/                 # 补充说明文档
+├── .github/skills/       # 仓颉 Skills 语料
+└── cangjie-docs-full/    # 仓颉语言完整文档
 ```
 
 ## 环境准备
 
-题目要求的构建和测试依赖如下：
+构建和测试依赖如下：
 
 - Cangjie SDK 1.0.5
 - cangjie-stdx-linux-x64-1.0.5.1
@@ -46,10 +48,13 @@ export KIMI_API_KEY=your_kimi_api_key
 
 ## 构建与测试
 
-仓库根目录现在是一个 `cjpm` workspace，可以直接统一验证：
+仓库根目录是一个 `cjpm` workspace（含 `cangjie-tree-sitter`、`service`、`agent` 三个成员），可以直接统一验证：
 
 ```bash
-cd /path/to/CangjieCoder
+# 1) 预编译 tree-sitter C 共享库
+cd cangjie-tree-sitter/treesitter && make && cd ../..
+
+# 2) 构建与测试全部项目
 cjpm build
 cjpm test
 ```
@@ -57,7 +62,8 @@ cjpm test
 也可以分别进入子项目：
 
 ```bash
-cd service && cjpm build && cjpm test
+cd cangjie-tree-sitter && cjpm build && cjpm test
+cd ../service && cjpm build && cjpm test
 cd ../agent && cjpm build && cjpm test
 ```
 
@@ -77,4 +83,4 @@ cd agent
 cjpm run --run-args "--workspace /absolute/path/to/workspace --prompt 为当前仓颉项目生成重构计划并执行必要的构建测试"
 ```
 
-默认模型为 **Kimi 2.5**（`kimi-k2.5`）。现在所有 AI Provider、会话记忆与最终总结逻辑都由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含更细粒度的 LSP 符号查询、定义跳转、文件创建与 AST 编辑能力）。
+默认模型为 **Kimi 2.5**（`kimi-k2.5`）。所有 AI Provider、会话记忆与最终总结逻辑由 `agent/` 本地负责，`service/` 仅提供 MCP / HTTP 工具能力（含 tree-sitter AST 解析、LSP 符号查询、定义跳转、文件创建与 AST 编辑等能力）。

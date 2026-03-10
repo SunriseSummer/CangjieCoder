@@ -1,5 +1,5 @@
 [workspace]
-members = ["service", "agent"]
-build-members = ["service", "agent"]
-test-members = ["service", "agent"]
+members = ["cangjie-tree-sitter", "service", "agent"]
+build-members = ["cangjie-tree-sitter", "service", "agent"]
+test-members = ["cangjie-tree-sitter", "service", "agent"]
 target-dir = "target"
