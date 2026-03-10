@@ -154,7 +154,48 @@ LSP 连接经历了两个阶段：
 
 ## 五、子包拆分
 
-### 5.1 LSP 子包（`cangjiecoder.lsp`）
+### 5.1 服务共享子包（`cangjiecoder.common`）
+
+将核心类型和工具函数提取到 `service/src/common/`：
+
+| 文件 | 职责 |
+|------|------|
+| `types.cj` | AppConfig、APP_VERSION — 应用配置和版本常量 |
+| `helpers.cj` | 路径处理（resolveBundledPath/resolveRepoPath/ensureWorkspacePath/workspaceRelativePath）、文件读写（readTextFile/writeTextFile）、文本预览（shortPreview）、命令执行（runCommandDetailedOutput/runCommandWithCapturedOutput） |
+
+### 5.2 JSON 工具子包（`cangjiecoder.json`）
+
+将通用 JSON 解析/序列化工具提取到 `service/src/json/`：
+
+| 文件 | 职责 |
+|------|------|
+| `helpers.cj` | jsonField、parseJsonObject、parseJsonIntField、parseJsonBoolField、jsonStringArrayField、toolResultJson、toolMessageJson、toolCommandResultJson |
+
+### 5.3 技能子包（`cangjiecoder.skills`）
+
+将技能注册表逻辑提取到 `service/src/skills/`：
+
+| 文件 | 职责 |
+|------|------|
+| `registry.cj` | SkillRecord 类型、SkillRegistry 类（加载/搜索/排名/上下文构建）、scoreSkill、parseSkill |
+
+### 5.4 项目模板子包（`cangjiecoder.projects`）
+
+将项目模板管理逻辑提取到 `service/src/projects/`：
+
+| 文件 | 职责 |
+|------|------|
+| `templates.cj` | ExampleProjectSpec 类型、listExampleProjects、findExampleProject、ensurePlannedWorkspacePath、bootstrapJsonParserProject |
+
+### 5.5 代码分析子包（`cangjiecoder.analysis`）
+
+将 AST 编辑和代码分析逻辑提取到 `service/src/analysis/`：
+
+| 文件 | 职责 |
+|------|------|
+| `analyzer.cj` | AstNodeMatch/AnalysisResult 类型、AST 解析（parseTreeSitterNodeMatches/offsetForPoint）、editAstNode、astEditSucceeded、analyzeCangjieFile |
+
+### 5.6 LSP 子包（`cangjiecoder.lsp`）
 
 将原 `service/src/lsp.cj`（655 行）拆分为 `service/src/lsp/` 子包：
 
@@ -164,22 +205,44 @@ LSP 连接经历了两个阶段：
 | `session.cj` | LspSessionManager 长驻会话管理、命令发现与缓存、帧流读取 |
 | `queries.cj` | 高层查询接口（document symbols/workspace symbols/definition）、冷启动回退、LSP 探测 |
 
-所有外部可见的类型和函数标记为 `public`，根包通过 `import cangjiecoder.lsp.*` 使用。子包内部复制了少量工具函数（`lspShortPreview`、`lspReadTextFile`、`lspEnsureWorkspacePath`、`lspRunCommand`）以避免对根包的循环依赖。
+### 5.7 MCP 子包（`cangjiecoder.mcp`）
 
-### 5.2 Agent 共享类型子包（`cangjiecoderagent.common`）
+MCP 模块采用**协议/处理分离**的架构：
 
-将原 `agent/src/agent_core.cj` 中的共享类型和工具函数拆分为 `agent/src/common/` 子包：
+| 文件 | 位置 | 职责 |
+|------|------|------|
+| `mcp/protocol.cj` | 子包 | ToolArgSpec/ToolDefinition、buildToolDefinitions、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame/readStdioFrame |
+| `mcp_handlers.cj` | 根包 | McpToolContext、所有 handle* 处理函数、buildMcpToolRegistry/buildMcpMethodRegistry、McpRuntime、startMcpStdioServer、createMcpRuntime |
+
+### 5.8 Agent 共享类型子包（`cangjiecoderagent.common`）
+
+将共享类型和工具函数提取到 `agent/src/common/`：
 
 | 文件 | 职责 |
 |------|------|
 | `types.cj` | AgentConfig、PlannedToolCall、AgentPlan、ToolExecution、ModelTurn、AgentPlanningContext、MAX_PLAN_STEPS |
 | `helpers.cj` | jsonField、parseJsonObject、shortPreview、extractStructuredData、jsonArrayStrings、containsAny、shellQuote |
 
-根包和 planner 子包都通过 `import cangjiecoderagent.common.*` 使用这些共享定义。
+### 5.9 AI 对话子包（`cangjiecoderagent.ai`）
 
-### 5.3 规划器子包（`cangjiecoderagent.planner`）
+将 AI 对话管理和提供者逻辑提取到 `agent/src/ai/`：
 
-将原 `agent/src/planner.cj`（537 行）拆分为 `agent/src/planner/` 子包：
+| 文件 | 职责 |
+|------|------|
+| `conversation.cj` | ConversationTurn/ConversationSession/ConversationStore — 会话管理、token 预算截断、持久化序列化/反序列化 |
+| `providers.cj` | ProviderSpec — 提供者配置、API 调用（chatWithProvider）、响应解析、系统提示词、conversationTurn |
+
+### 5.10 MCP 客户端子包（`cangjiecoderagent.client`）
+
+将 MCP 客户端通信逻辑提取到 `agent/src/client/`：
+
+| 文件 | 职责 |
+|------|------|
+| `service_client.cj` | ServiceClient 类（MCP stdio 调用）、帧编解码（encodeMcpFrame/extractMcpBodies）、JSON-RPC 请求构建、服务命令解析 |
+
+### 5.11 规划器子包（`cangjiecoderagent.planner`）
+
+将规划逻辑提取到 `agent/src/planner/`：
 
 | 文件 | 职责 |
 |------|------|
@@ -187,44 +250,50 @@ LSP 连接经历了两个阶段：
 | `prompts.cj` | buildPlanPrompt、buildReplanPrompt、buildCompactWorkspaceSummary — 提示词构建 |
 | `planning.cj` | parsePlan、buildFallbackPlan、normalizePlanSteps — 计划解析与回退逻辑 |
 
-### 5.4 MCP 子包（`cangjiecoder.mcp`）
+### 子包设计原则
 
-MCP 模块采用**协议/处理分离**的架构：
-
-- **`mcp/protocol.cj`**（子包）：仅包含协议层代码 —— ToolArgSpec/ToolDefinition 类型、工具定义列表、JSON-RPC 响应构建、mcpToolCallResultJson、stdio 帧编解码
-- **`mcp_handlers.cj`**（根包）：MCP 工具处理函数、McpRuntime、工具/方法注册表、stdio 服务入口、createMcpRuntime 工厂函数
-
-| 文件 | 位置 | 职责 |
-|------|------|------|
-| `mcp/protocol.cj` | 子包 | ToolArgSpec/ToolDefinition、buildToolDefinitions、toolDefinitionsJson、jsonRpcResult/jsonRpcError、mcpToolCallResultJson、encodeMcpFrame/readStdioFrame |
-| `mcp_handlers.cj` | 根包 | McpToolContext、所有 handle* 处理函数、buildMcpToolRegistry/buildMcpMethodRegistry、McpRuntime、startMcpStdioServer、createMcpRuntime |
-
-**设计决策**：处理函数直接调用根包域函数（`replaceExactText`、`workspaceListFilesJson`、LSP 查询等），无需函数引用桥接。协议类型和帧编解码放在子包中保持关注分离，而处理逻辑自然属于根包（它需要所有域函数的直接访问）。
+1. **子包不导入父包**：仓颉 cjpm 约束子包不能循环依赖父包，需要的工具函数在子包内部复制
+2. **协议/类型/纯函数放子包**：子包只包含无副作用的类型定义、协议编解码和纯函数
+3. **处理/业务逻辑留根包**：需要调用多个域函数的处理逻辑（MCP handlers、HTTP routes）直接放在根包
+4. **兄弟子包可互相导入**：`cangjiecoderagent.client` 可以导入 `cangjiecoderagent.common`
 
 ## 六、文件变更清单
 
+### 服务端（service/src/）
+
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
-| `agent/src/ai_core.cj` | 修改 | Token 预算、会话持久化、反序列化重构 |
-| `agent/src/agent_core.cj` | 修改 | 移除迁入 common 子包的类型和函数 |
-| `agent/src/common/types.cj` | 新增 | 共享类型定义子包 |
-| `agent/src/common/helpers.cj` | 新增 | 共享工具函数子包 |
-| `agent/src/planner/json.cj` | 新增 | JSON 提取（从 planner.cj 拆出） |
-| `agent/src/planner/prompts.cj` | 新增 | 提示词构建（从 planner.cj 拆出） |
-| `agent/src/planner/planning.cj` | 新增 | 计划解析与回退（从 planner.cj 拆出） |
-| `agent/src/runner.cj` | 修改 | 提取 executeRoundSteps、generateFinalReport |
-| `agent/src/ai_core_test.cj` | 修改 | 新增 7 个测试 |
-| `agent/src/agent_test.cj` | 修改 | 新增 6 个测试 |
-| `service/src/core.cj` | 修改 | FileBackupStore、globalBackupStore |
-| `service/src/lsp/protocol.cj` | 新增 | LSP 协议层（从 lsp.cj 拆出） |
-| `service/src/lsp/session.cj` | 新增 | LSP 会话管理（从 lsp.cj 拆出） |
-| `service/src/lsp/queries.cj` | 新增 | LSP 查询接口（从 lsp.cj 拆出） |
-| `service/src/mcp/protocol.cj` | 新增 | MCP 协议层 — 工具定义、JSON-RPC 辅助、帧编解码 |
-| `service/src/mcp_handlers.cj` | 新增 | MCP 工具处理、运行时、注册表、stdio 服务、createMcpRuntime |
-| `service/src/json_helpers.cj` | 修改 | 移除已迁入 MCP 子包的 JSON-RPC 辅助函数 |
-| `service/src/workspace_tools.cj` | 修改 | 自动备份集成 |
-| `service/src/skills_test.cj` | 修改 | 备份回滚和 LSP 缓存测试 |
-| `service/src/server_test.cj` | 修改 | MCP 回滚工具集成测试 |
-| `service/src/mcp_protocol_test.cj` | 修改 | 工具注册覆盖测试 |
-| `service/src/projects_test.cj` | 修改 | LSP 测试清理全局状态 |
-| `record.md` | 新增 | 本文档 |
+| `common/types.cj` | 新增 | AppConfig、APP_VERSION — 共享配置和常量 |
+| `common/helpers.cj` | 新增 | 路径处理、文件 I/O、命令执行 — 共享工具函数 |
+| `json/helpers.cj` | 新增 | jsonField、parseJsonObject、工具结果序列化 — 通用 JSON 工具 |
+| `skills/registry.cj` | 新增 | SkillRecord、SkillRegistry — 技能注册（从 skills.cj 拆出） |
+| `projects/templates.cj` | 新增 | ExampleProjectSpec、项目引导 — 模板管理（从 projects.cj 拆出） |
+| `analysis/analyzer.cj` | 新增 | AstNodeMatch、AnalysisResult、AST 编辑、代码分析（从 ast_edit.cj + workspace_tools.cj 拆出） |
+| `lsp/protocol.cj` | 新增 | LSP 类型定义、协议常量、帧编解码 |
+| `lsp/session.cj` | 新增 | LspSessionManager 长驻会话管理 |
+| `lsp/queries.cj` | 新增 | LSP 高层查询接口、冷启动回退 |
+| `mcp/protocol.cj` | 新增 | MCP 工具定义、JSON-RPC 辅助、帧编解码 |
+| `core.cj` | 修改 | 保留 FileBackupStore 和 replaceExactText，其余迁入子包 |
+| `json_helpers.cj` | 修改 | 保留领域对象序列化（skillsJson/analysisJson/lspQueryJson 等），通用工具迁入 json 子包 |
+| `workspace_tools.cj` | 修改 | 分析函数迁入 analysis 子包，保留工作区操作和命令执行 |
+| `mcp_handlers.cj` | 修改 | MCP 处理函数、运行时、注册表 |
+| `http_server.cj` | 修改 | 导入更新 |
+| `main.cj` | 修改 | 导入更新 |
+
+### 智能体（agent/src/）
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `ai/conversation.cj` | 新增 | ConversationSession/Store、token 预算截断、持久化（从 ai_core.cj 拆出） |
+| `ai/providers.cj` | 新增 | ProviderSpec、API 调用、系统提示词、conversationTurn（从 ai_core.cj 拆出） |
+| `client/service_client.cj` | 新增 | ServiceClient、MCP 帧编解码、JSON-RPC 请求（从 mcp_client.cj 拆出） |
+| `common/types.cj` | 新增 | AgentConfig、PlannedToolCall、AgentPlan、ModelTurn 等共享类型 |
+| `common/helpers.cj` | 新增 | jsonField、parseJsonObject、shortPreview 等共享工具函数 |
+| `planner/json.cj` | 新增 | extractJsonObjectText — 深度追踪 JSON 提取 |
+| `planner/prompts.cj` | 新增 | 提示词构建 |
+| `planner/planning.cj` | 新增 | 计划解析与回退逻辑 |
+| `ai_core.cj` | 修改 | 功能迁入 ai 子包，保留包声明 |
+| `mcp_client.cj` | 修改 | 功能迁入 client 子包，保留包声明 |
+| `runner.cj` | 修改 | 导入更新 |
+| `executor.cj` | 修改 | 导入更新 |
+| `record.md` | 修改 | 更新本文档 |

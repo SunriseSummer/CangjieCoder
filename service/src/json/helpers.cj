@@ -108,7 +108,7 @@ public func toolCommandResultJson(command: String,
                            status: Int64,
                            stdout: String,
                            stderr: String,
-                           previewLines!: Int64 = 20): String {
+                           maxLines!: Int64 = 20): String {
     let argsJson = JsonArray()
     for (arg in arguments) {
         argsJson.add(JsonString(arg))
@@ -118,8 +118,8 @@ public func toolCommandResultJson(command: String,
     data.put("arguments", argsJson)
     data.put("workingDirectory", JsonString(workingDirectory))
     data.put("exitCode", JsonInt(status))
-    data.put("stdout", JsonString(jsonShortPreview(stdout, maxLines: previewLines)))
-    data.put("stderr", JsonString(jsonShortPreview(stderr, maxLines: previewLines)))
+    data.put("stdout", JsonString(jsonShortPreview(stdout, maxLines: maxLines)))
+    data.put("stderr", JsonString(jsonShortPreview(stderr, maxLines: maxLines)))
     let ok = status == 0
     let summary = if (ok) {
         "Command succeeded: ${command}"
