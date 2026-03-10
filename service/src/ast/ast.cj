@@ -284,16 +284,9 @@ public func astNodeInfoArrayToJson(nodes: Array<AstNodeInfo>): String {
 
 // 简单 JSON 字符串转义
 func jsonEscapeString(s: String): String {
-    let sb = StringBuilder()
-    for (ch in s) {
-        match (ch) {
-            case r'\"' => sb.append("\\\"")
-            case r'\\' => sb.append("\\\\")
-            case r'\n' => sb.append("\\n")
-            case r'\r' => sb.append("\\r")
-            case r'\t' => sb.append("\\t")
-            case _ => sb.append(ch.toString())
-        }
-    }
-    return sb.toString()
+    return s.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
 }

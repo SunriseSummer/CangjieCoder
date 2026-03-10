@@ -3,7 +3,6 @@ package cangjiecoder
 import std.env.*
 import std.fs.*
 import cangjiecoder.common.*
-import cangjiecoder.json.*
 import cangjiecoder.mcp.*
 import cangjiecoder.ast.*
 
