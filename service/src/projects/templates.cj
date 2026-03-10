@@ -1,17 +1,18 @@
-package cangjiecoder
+// 项目模板管理：示例项目列举与引导
+package cangjiecoder.projects
 
 import std.fs.*
 import std.io.*
 
-struct ExampleProjectSpec {
-    public ExampleProjectSpec(let id: String,
-                              let name: String,
-                              let description: String,
-                              let templatePath: String) {}
+public struct ExampleProjectSpec {
+    public ExampleProjectSpec(public let id: String,
+                              public let name: String,
+                              public let description: String,
+                              public let templatePath: String) {}
 }
 
-func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
-    let examplesRoot = resolveBundledPath(serviceRoot, "examples")
+public func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
+    let examplesRoot = projectsResolveBundledPath(serviceRoot, "examples")
     return [
         ExampleProjectSpec(
             "json_parser",
@@ -22,7 +23,7 @@ func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> {
     ]
 }
 
-func findExampleProject(serviceRoot: String, projectId: String): ?ExampleProjectSpec {
+public func findExampleProject(serviceRoot: String, projectId: String): ?ExampleProjectSpec {
     let normalizedId = projectId.toAsciiLower().trimAscii()
     for (project in listExampleProjects(serviceRoot)) {
         if (project.id == normalizedId) {
@@ -32,9 +33,9 @@ func findExampleProject(serviceRoot: String, projectId: String): ?ExampleProject
     return None
 }
 
-func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
+public func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     let canonicalRoot = canonicalize(repoRoot).toString()
-    let fullPath = resolveRepoPath(repoRoot, path)
+    let fullPath = projectsResolveRepoPath(repoRoot, path)
     let plannedPath = Path(fullPath)
     let parentPath = plannedPath.parent
     if (parentPath.toString().isEmpty()) {
@@ -58,7 +59,7 @@ func ensurePlannedWorkspacePath(repoRoot: String, path: String): String {
     return fullPath
 }
 
-func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
+public func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
     let outputPath = ensurePlannedWorkspacePath(workspaceRoot, destination)
     if (exists(outputPath)) {
         return "Destination already exists: ${outputPath}"
@@ -80,4 +81,24 @@ func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, dest
         case None =>
             return "JsonParser example template is missing"
     }
+}
+
+// 子包内部工具函数副本（避免对根包循环依赖）
+func projectsResolveBundledPath(serviceRoot: String, relativePath: String): String {
+    let bundledPath = "${serviceRoot}/${relativePath}"
+    if (exists(bundledPath)) {
+        return canonicalize(bundledPath).toString()
+    }
+    let parentBundledPath = "${serviceRoot}/../${relativePath}"
+    if (exists(parentBundledPath)) {
+        return canonicalize(parentBundledPath).toString()
+    }
+    return bundledPath
+}
+
+func projectsResolveRepoPath(repoRoot: String, path: String): String {
+    if (path.startsWith("/")) {
+        return path
+    }
+    return "${repoRoot}/${path}"
 }

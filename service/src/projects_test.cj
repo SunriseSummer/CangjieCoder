@@ -2,6 +2,10 @@ package cangjiecoder
 
 import std.env.*
 import std.fs.*
+import cangjiecoder.common.*
+import cangjiecoder.json.*
+import cangjiecoder.lsp.*
+import cangjiecoder.projects.*
 
 func restoreVariable(key: String, previousValue: ?String): Unit {
     match (previousValue) {
@@ -94,12 +98,15 @@ class ProjectBootstrapTest {
         removeVariable("CANGJIE_LSP_COMMAND")
         removeVariable("CANGJIE_SDK_HOME")
         setVariable("PATH", "/usr/bin:/bin")
+        clearLspCommandCache()
+        closeLspSession()
         let result = queryLspWorkspaceSymbols(getWorkingDirectory().toString(), "JsonParser")
         @Expect(!result.available)
         @Expect(result.summary.contains("No Cangjie LSP binary"))
         restoreVariable("CANGJIE_LSP_COMMAND", previousCommand)
         restoreVariable("CANGJIE_SDK_HOME", previousSdkHome)
         restoreVariable("PATH", previousPath)
+        clearLspCommandCache()
     }
 
     @TestCase
@@ -113,6 +120,8 @@ class ProjectBootstrapTest {
         let previousSdkHome = getVariable("CANGJIE_SDK_HOME")
         setVariable("CANGJIE_LSP_COMMAND", fakeLspServerScript(workspace.toString(), responseBody))
         removeVariable("CANGJIE_SDK_HOME")
+        clearLspCommandCache()
+        closeLspSession()
         let result = queryLspDefinition(workspace.toString(), "src/demo.cj", 2, 4)
         @Expect(result.available)
         @Expect(result.success)
@@ -120,6 +129,8 @@ class ProjectBootstrapTest {
         @Expect(result.resultJson.contains("\"uri\""))
         restoreVariable("CANGJIE_LSP_COMMAND", previousCommand)
         restoreVariable("CANGJIE_SDK_HOME", previousSdkHome)
+        clearLspCommandCache()
+        closeLspSession()
         removeIfExists(workspace.toString(), recursive: true)
     }
 }

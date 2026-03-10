@@ -1,6 +1,10 @@
 package cangjiecoderagent
 
 import stdx.encoding.json.*
+import cangjiecoderagent.common.*
+import cangjiecoderagent.ai.*
+import cangjiecoderagent.client.*
+import cangjiecoderagent.planner.*
 
 @Test
 class AgentHelpersTest {
@@ -157,5 +161,57 @@ class AgentHelpersTest {
         )
         @Expect(steps.size == 1)
         @Expect(steps[0].tool, "workspace.list_files")
+    }
+
+    @TestCase
+    func extractJsonObjectTextHandlesMultipleJsonBlocks() {
+        // 当模型输出包含多个 JSON 块时，优先返回包含 steps 字段的对象
+        let text = "Here are two objects:\n{\"type\":\"config\"}\n{\"summary\":\"plan\",\"steps\":[]}"
+        let json = extractJsonObjectText(text)
+        @Expect(json.contains("steps"))
+        @Expect(json.contains("summary"))
+    }
+
+    @TestCase
+    func extractJsonObjectTextHandlesBracesInStrings() {
+        // JSON 字符串内的花括号不应干扰深度计数
+        let text = "{\"summary\":\"object with { braces } inside\",\"steps\":[]}"
+        let json = extractJsonObjectText(text)
+        @Expect(json.contains("steps"))
+        @Expect(json.contains("summary"))
+    }
+
+    @TestCase
+    func extractJsonObjectTextHandlesBracesAfterJson() {
+        // JSON 对象之后出现花括号（如代码示例）不应导致解析失败
+        let text = "Plan: {\"summary\":\"ok\",\"steps\":[]} and here is code { func() {} }"
+        let json = extractJsonObjectText(text)
+        @Expect(json.contains("summary"))
+        @Expect(json.contains("steps"))
+    }
+
+    @TestCase
+    func extractJsonObjectTextReturnsEmptyForPlainText() {
+        let json = extractJsonObjectText("no json here at all")
+        @Expect(json.isEmpty())
+    }
+
+    @TestCase
+    func buildCompactWorkspaceSummaryExtractsKeyInfo() {
+        let snapshot = "{\"ok\":true,\"data\":{\"count\":5,\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\",\"src/helper.cj\",\"src/helper_test.cj\"]}}"
+        let summary = buildCompactWorkspaceSummary(snapshot)
+        @Expect(summary.contains("5 files total"))
+        @Expect(summary.contains("README.md"))
+        @Expect(summary.contains("cjpm.toml"))
+        @Expect(summary.contains("src/main.cj"))
+        @Expect(summary.contains("src/helper.cj"))
+        // test files 应被排除在源码文件列表之外
+        @Expect(!summary.contains("helper_test.cj"))
+    }
+
+    @TestCase
+    func buildCompactWorkspaceSummaryHandlesEmptySnapshot() {
+        let summary = buildCompactWorkspaceSummary("{}")
+        @Expect(summary.contains("0 files total"))
     }
 }

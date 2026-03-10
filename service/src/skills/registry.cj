@@ -1,13 +1,22 @@
-package cangjiecoder
+// 技能注册表：技能加载、搜索、排名
+package cangjiecoder.skills
 
 import std.collection.*
 import std.fs.*
 
-class SkillRegistry {
+public struct SkillRecord {
+    public SkillRecord(public let id: String,
+                       public let name: String,
+                       public let description: String,
+                       public let preview: String,
+                       public let path: String) {}
+}
+
+public class SkillRegistry {
     let skills = ArrayList<SkillRecord>()
 
     public init(serviceRoot: String) {
-        let skillsRoot = resolveBundledPath(serviceRoot, ".github/skills")
+        let skillsRoot = skillsResolveBundledPath(serviceRoot, ".github/skills")
         if (exists(skillsRoot)) {
             loadSkillDirectory(skillsRoot)
         }
@@ -86,7 +95,7 @@ class SkillRegistry {
     }
 }
 
-func scoreSkill(skill: SkillRecord, normalized: String, tokens: Array<String>): Int64 {
+public func scoreSkill(skill: SkillRecord, normalized: String, tokens: Array<String>): Int64 {
     let idText = "${skill.id} ${skill.name}".toAsciiLower()
     let descriptionText = skill.description.toAsciiLower()
     let previewText = skill.preview.toAsciiLower()
@@ -120,8 +129,8 @@ func scoreSkill(skill: SkillRecord, normalized: String, tokens: Array<String>): 
     return score
 }
 
-func parseSkill(path: String): SkillRecord {
-    let content = readTextFile(path)
+public func parseSkill(path: String): SkillRecord {
+    let content = skillsReadTextFile(path)
     let normalizedPath = path.replace("\\", "/")
     let segments = normalizedPath.split("/", removeEmpty: true)
     let skillId = if (segments.size >= 2) { segments[segments.size - 2] } else { normalizedPath }
@@ -158,4 +167,21 @@ func parseSkill(path: String): SkillRecord {
 
     let preview = String.join(previewLines.toArray(), delimiter: "\n")
     return SkillRecord(skillId, name, description, preview, path)
+}
+
+// 子包内部工具函数副本（避免对根包循环依赖）
+func skillsReadTextFile(path: String): String {
+    return String.fromUtf8(File.readFrom(path))
+}
+
+func skillsResolveBundledPath(serviceRoot: String, relativePath: String): String {
+    let bundledPath = "${serviceRoot}/${relativePath}"
+    if (exists(bundledPath)) {
+        return canonicalize(bundledPath).toString()
+    }
+    let parentBundledPath = "${serviceRoot}/../${relativePath}"
+    if (exists(parentBundledPath)) {
+        return canonicalize(parentBundledPath).toString()
+    }
+    return bundledPath
 }

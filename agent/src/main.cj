@@ -1,5 +1,8 @@
 package cangjiecoderagent
 
+import cangjiecoderagent.common.*
+import cangjiecoderagent.ai.*
+
 // 打印命令行用法，列出子命令与全局选项
 func printUsage(): Unit {
     println("CangjieCoder Agent")

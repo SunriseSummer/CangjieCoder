@@ -1,5 +1,8 @@
 package cangjiecoder
 
+import cangjiecoder.mcp.*
+import cangjiecoder.json.*
+
 @Test
 class McpProtocolTest {
     @TestCase
@@ -16,6 +19,7 @@ class McpProtocolTest {
         @Expect(json.contains("workspace.run_build"))
         @Expect(json.contains("workspace.run_test"))
         @Expect(json.contains("workspace.run_command"))
+        @Expect(json.contains("workspace.rollback"))
     }
 
     @TestCase

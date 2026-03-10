@@ -2,6 +2,8 @@ package cangjiecoderagent
 
 import std.collection.*
 import stdx.encoding.json.*
+import cangjiecoderagent.common.*
+import cangjiecoderagent.planner.*
 
 func isMutatingTool(tool: String): Bool {
     // 这里集中维护“会改变工作区状态”的工具集合，

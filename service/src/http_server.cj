@@ -3,10 +3,17 @@ package cangjiecoder
 import std.io.*
 import stdx.encoding.json.*
 import stdx.net.http.*
+import cangjiecoder.common.*
+import cangjiecoder.json.*
+import cangjiecoder.lsp.*
+import cangjiecoder.skills.*
+import cangjiecoder.projects.*
+import cangjiecoder.analysis.*
 
 // 启动 HTTP API 服务，注册所有工作区/LSP/MCP 路由
 func startServer(config: AppConfig): Unit {
-    let runtime = McpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
+    let runtime = createMcpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
+    let skillRegistry = SkillRegistry(runtime.serviceRoot)
     let server = ServerBuilder().addr(config.host).port(config.port).build()
 
     server.distributor.register("/health", {
@@ -27,7 +34,7 @@ func startServer(config: AppConfig): Unit {
         ctx =>
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(skillsJson(runtime.registry.list(limit: 200)))
+            .body(skillsJson(skillRegistry.list(limit: 200)))
     })
 
     server.distributor.register("/skills/search", {
@@ -36,7 +43,7 @@ func startServer(config: AppConfig): Unit {
         let query = jsonField(request, "query")
         ctx.responseBuilder
             .header("Content-Type", "application/json")
-            .body(skillsJson(runtime.registry.search(query, limit: 8)))
+            .body(skillsJson(skillRegistry.search(query, limit: 8)))
     })
 
     server.distributor.register("/analyze", {

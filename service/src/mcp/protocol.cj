@@ -1,21 +1,29 @@
-package cangjiecoder
+// MCP 协议层：工具定义、参数规格、JSON 序列化、帧编解码
+package cangjiecoder.mcp
 
+import std.convert.*
+import std.env.*
 import stdx.encoding.json.*
 
-struct ToolArgSpec {
-    public ToolArgSpec(let name: String,
-                       let kind: String,
-                       let description: String,
-                       let required: Bool) {}
+// MCP stdio 帧格式常量
+public const MCP_HEADER_DELIMITER: String = "\r\n\r\n"
+public const MCP_CONTENT_LENGTH_HEADER: String = "Content-Length:"
+public const STDIO_CHUNK_SIZE: Int64 = 4096
+
+public struct ToolArgSpec {
+    public ToolArgSpec(public let name: String,
+                       public let kind: String,
+                       public let description: String,
+                       public let required: Bool) {}
 }
 
-struct ToolDefinition {
-    public ToolDefinition(let name: String,
-                          let description: String,
-                          let args: Array<ToolArgSpec>) {}
+public struct ToolDefinition {
+    public ToolDefinition(public let name: String,
+                          public let description: String,
+                          public let args: Array<ToolArgSpec>) {}
 }
 
-func buildToolDefinitions(): Array<ToolDefinition> {
+public func buildToolDefinitions(): Array<ToolDefinition> {
     return [
         ToolDefinition("skills.search", "Search built-in Cangjie skills stored in .github/skills.", [
             ToolArgSpec("query", "string", "Search keywords for skills lookup.", true)
@@ -78,11 +86,12 @@ func buildToolDefinitions(): Array<ToolDefinition> {
             ToolArgSpec("nodeType", "string", "Tree-sitter node type to replace.", true),
             ToolArgSpec("replacement", "string", "Replacement source text.", true),
             ToolArgSpec("index", "integer", "Zero-based match index when multiple nodes match. Defaults to 0 if omitted.", false)
-        ])
+        ]),
+        ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", [])
     ]
 }
 
-func toolDefinitionsJson(): String {
+public func toolDefinitionsJson(): String {
     let tools = JsonArray()
     for (tool in buildToolDefinitions()) {
         let item = JsonObject()
@@ -110,4 +119,95 @@ func toolDefinitionsJson(): String {
     let root = JsonObject()
     root.put("tools", tools)
     return root.toString()
+}
+
+// JSON-RPC 2.0 成功响应
+public func jsonRpcResult(idJson: String, resultJson: String): String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"result\":${resultJson}}"
+}
+
+// JSON-RPC 2.0 错误响应
+public func jsonRpcError(idJson: String, code: Int64, message: String): String {
+    let error = JsonObject()
+    error.put("code", JsonInt(code))
+    error.put("message", JsonString(message))
+    return "{\"jsonrpc\":\"2.0\",\"id\":${idJson},\"error\":${error.toString()}}"
+}
+
+// 将工具调用结果包装为 MCP content blocks 格式
+public func mcpToolCallResultJson(content: String): String {
+    let toolResult = JsonValue.fromStr(content).asObject()
+    let textBlocks = JsonArray()
+    let textBlock = JsonObject()
+    textBlock.put("type", JsonString("text"))
+    textBlock.put("text", JsonString(content))
+    textBlocks.add(textBlock)
+
+    let isError = match (toolResult.get("ok")) {
+        case Some(value) =>
+            match (value.toString()) {
+                case "true" => false
+                case _ => true
+            }
+        case None =>
+            false
+    }
+
+    let result = JsonObject()
+    result.put("content", textBlocks)
+    result.put("structuredContent", toolResult)
+    result.put("isError", JsonBool(isError))
+    return result.toString()
+}
+
+// 将 JSON 消息体编码为 MCP Content-Length 帧
+public func encodeMcpFrame(body: String): String {
+    return "${MCP_CONTENT_LENGTH_HEADER} ${body.toArray().size}${MCP_HEADER_DELIMITER}${body}"
+}
+
+// 从标准输入逐字节读取一个 MCP 帧（Content-Length + body）
+public func readStdioFrame(reader: ConsoleReader): ?String {
+    var contentLength: Int64 = -1
+    while (true) {
+        match (reader.readln()) {
+            case Some(line) =>
+                let trimmed = line.trimAscii()
+                if (trimmed.isEmpty()) {
+                    break
+                }
+                if (trimmed.startsWith(MCP_CONTENT_LENGTH_HEADER)) {
+                    let rawLength = trimmed[MCP_CONTENT_LENGTH_HEADER.size..trimmed.size].trimAscii()
+                    try {
+                        contentLength = Int64.parse(rawLength)
+                    } catch (e: Exception) {
+                        return None
+                    }
+                }
+            case None =>
+                return None
+        }
+    }
+
+    if (contentLength < 0) {
+        return None
+    }
+
+    var bodyBytes = Array<Byte>(contentLength, repeat: 0)
+    var offset: Int64 = 0
+    while (offset < contentLength) {
+        let remaining = contentLength - offset
+        let chunkSize = if (remaining > STDIO_CHUNK_SIZE) { STDIO_CHUNK_SIZE } else { remaining }
+        var chunk = Array<Byte>(chunkSize, repeat: 0)
+        let bytesRead = reader.read(chunk)
+        if (bytesRead <= 0) {
+            return None
+        }
+        var index: Int64 = 0
+        while (index < bytesRead) {
+            bodyBytes[offset + index] = chunk[index]
+            index += 1
+        }
+        offset += bytesRead
+    }
+    return String.fromUtf8(bodyBytes)
 }

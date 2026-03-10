@@ -1,59 +1,15 @@
+// 工作区操作：文件列举、搜索、创建、命令执行
 package cangjiecoder
 
 import std.convert.*
-import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
+import cangjiecoder.common.*
+import cangjiecoder.json.*
+import cangjiecoder.projects.*
 
 const WORKSPACE_COMMAND_OUTPUT_PREVIEW_LINES: Int64 = 20
 let allowedWorkspaceCommands: Array<String> = ["cjpm", "cjc", "cjlint", "tree-sitter", "find", "grep"]
-
-// 判断 AST 编辑结果是否成功（无错误前缀）
-func astEditSucceeded(message: String): Bool {
-    return !message.startsWith("tree-sitter unavailable") &&
-        !message.contains("No AST node matched") &&
-        !message.contains("Path does not exist") &&
-        !message.contains("escapes repository root")
-}
-
-// 逐级尝试更丰富的分析器（tree-sitter → cjlint → cjc），返回最佳可用信号
-func analyzeCangjieFile(repoRoot: String, path: String): AnalysisResult {
-    let fullPath = ensureWorkspacePath(repoRoot, path)
-    let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
-    let (treeOk, treeStdout, treeStderr) = runCommandWithCapturedOutput(treeSitterCommand,
-        ["parse", fullPath],
-        repoRoot)
-    if (treeOk) {
-        return AnalysisResult("tree-sitter", true, "Tree-sitter parse succeeded", shortPreview(treeStdout, maxLines: 12))
-    }
-    if (!treeStderr.trimAscii().isEmpty()) {
-        return AnalysisResult("tree-sitter", false,
-            "Tree-sitter parse failed. Configure TREE_SITTER_CANGJIE to point to a Cangjie-enabled tree-sitter CLI.",
-            shortPreview(treeStderr, maxLines: 12))
-    }
-
-    let lintCommand = getVariable("CJLINT_COMMAND") ?? "cjlint"
-    let (lintOk, lintStdout, lintStderr) = runCommandWithCapturedOutput(lintCommand, [fullPath], repoRoot)
-    if (lintOk) {
-        return AnalysisResult("cjlint", true, "cjlint completed", shortPreview(lintStdout, maxLines: 12))
-    }
-    if (!lintStdout.trimAscii().isEmpty() || !lintStderr.trimAscii().isEmpty()) {
-        return AnalysisResult("cjlint", false, "cjlint reported diagnostics", shortPreview("${lintStdout}\n${lintStderr}", maxLines: 12))
-    }
-
-    let compileCommand = getVariable("CJC_COMMAND") ?? "cjc"
-    let (compileOk, compileStdout, compileStderr) = runCommandWithCapturedOutput(compileCommand, [fullPath], repoRoot)
-    if (compileOk) {
-        return AnalysisResult("cjc", true, "cjc syntax check succeeded", shortPreview(compileStdout, maxLines: 12))
-    }
-
-    return AnalysisResult(
-        "fallback",
-        false,
-        "No precise analyzer is configured. Install tree-sitter or the Cangjie toolchain and set TREE_SITTER_CANGJIE / CJLINT_COMMAND / CJC_COMMAND.",
-        shortPreview("${compileStdout}\n${compileStderr}", maxLines: 12)
-    )
-}
 
 // 解析工作区内的子目录路径，空路径回退到工作区根目录
 func resolveWorkspaceCommandDirectory(repoRoot: String, path: String): String {
@@ -146,7 +102,7 @@ func workspaceSearchTextJson(repoRoot: String, query: String, path: String, limi
     return toolResultJson(true, if (count == 0) { "No workspace matches found" } else { "Found workspace text matches" }, data: data)
 }
 
-// 在工作区中创建文件，默认禁止覆写已有文件
+// 在工作区中创建文件，默认禁止覆盖已有文件
 func workspaceCreateFileJson(repoRoot: String,
                              path: String,
                              content: String,
@@ -161,6 +117,10 @@ func workspaceCreateFileJson(repoRoot: String,
         return toolMessageJson(false,
             "Workspace file creation rejected",
             "Path already exists: ${workspaceRelativePath(repoRoot, fullPath)}")
+    }
+    // 覆盖前自动备份原始内容，支持事务回滚
+    if (existedBefore && overwrite) {
+        globalBackupStore.backup(fullPath)
     }
     writeTextFile(fullPath, content)
     let data = JsonObject()
