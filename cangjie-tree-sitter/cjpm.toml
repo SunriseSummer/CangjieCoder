@@ -1,0 +1,9 @@
+[package]
+name = "cjtreesitter"
+version = "0.1.0"
+cjc-version = "1.0.5"
+output-type = "dynamic"
+description = "Cangjie bindings for tree-sitter, with built-in Cangjie language grammar support."
+
+[ffi.c]
+tree_sitter_cangjie = { path = "./treesitter/" }
