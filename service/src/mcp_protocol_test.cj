@@ -1,6 +1,7 @@
 package cangjiecoder
 
 import cangjiecoder.mcp.*
+import cangjiecoder.json.*
 
 @Test
 class McpProtocolTest {

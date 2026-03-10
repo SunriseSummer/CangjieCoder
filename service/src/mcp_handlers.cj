@@ -4,8 +4,13 @@ package cangjiecoder
 import std.collection.*
 import std.env.*
 import stdx.encoding.json.*
+import cangjiecoder.common.*
+import cangjiecoder.json.*
 import cangjiecoder.lsp.*
 import cangjiecoder.mcp.*
+import cangjiecoder.skills.*
+import cangjiecoder.projects.*
+import cangjiecoder.analysis.*
 
 // MCP 工具上下文 —— 每次 tools/call 携带的运行时环境
 struct McpToolContext {

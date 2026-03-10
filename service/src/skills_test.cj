@@ -2,7 +2,10 @@ package cangjiecoder
 
 import std.env.*
 import std.fs.*
+import cangjiecoder.common.*
+import cangjiecoder.json.*
 import cangjiecoder.lsp.*
+import cangjiecoder.skills.*
 
 @Test
 class CangjieCoderBasicsTest {

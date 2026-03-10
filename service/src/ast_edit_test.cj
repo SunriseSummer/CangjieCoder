@@ -1,5 +1,7 @@
 package cangjiecoder
 
+import cangjiecoder.analysis.*
+
 @Test
 class AstEditTest {
     @TestCase

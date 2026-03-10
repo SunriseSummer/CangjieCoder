@@ -3,6 +3,8 @@ package cangjiecoderagent
 import std.collection.*
 import stdx.encoding.json.*
 import cangjiecoderagent.common.*
+import cangjiecoderagent.ai.*
+import cangjiecoderagent.client.*
 import cangjiecoderagent.planner.*
 
 func mergedPlanSummary(plans: Array<AgentPlan>): String {

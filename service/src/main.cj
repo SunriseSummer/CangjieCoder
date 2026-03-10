@@ -5,7 +5,11 @@ import std.collection.*
 import std.convert.*
 import std.env.*
 import std.fs.*
+import cangjiecoder.common.*
 import cangjiecoder.lsp.*
+import cangjiecoder.skills.*
+import cangjiecoder.projects.*
+import cangjiecoder.analysis.*
 
 // 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {

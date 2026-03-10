@@ -2,6 +2,8 @@ package cangjiecoderagent
 
 import stdx.encoding.json.*
 import cangjiecoderagent.common.*
+import cangjiecoderagent.ai.*
+import cangjiecoderagent.client.*
 import cangjiecoderagent.planner.*
 
 @Test

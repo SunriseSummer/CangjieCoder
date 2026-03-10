@@ -4,6 +4,8 @@ import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
 import cangjiecoderagent.common.*
+import cangjiecoderagent.ai.*
+import cangjiecoderagent.client.*
 
 func currentServiceDir(): String {
     return resolveDefaultServiceDir(canonicalize(getWorkingDirectory().toString()).toString())

@@ -2,6 +2,7 @@ package cangjiecoderagent
 
 import std.env.*
 import std.fs.*
+import cangjiecoderagent.ai.*
 
 @Test
 class AgentAiCoreTest {
