@@ -492,5 +492,82 @@ return defs.toArray()
 | `service/src/lsp/session.cj` | 优化 | 补充完整中文注释，为 LspSessionManager 所有方法添加功能说明 |
 | `service/src/mcp/protocol.cj` | 优化 | 重构 buildToolDefinitions 为 ArrayList 模式，补充完整中文注释 |
 | `service/src/mcp_handlers.cj` | 优化 | 补充完整中文注释和代码分段标记 |
-| `service/src/code_quality_test.cj` | 新增 | 63 个新增测试用例 |
+| `service/src/code_quality_test.cj` | 新增 | 63+1 个新增测试用例 |
 | `record.md` | 更新 | 记录本次优化内容 |
+
+## 五、异常处理机制优化
+
+### 5.1 设计原则
+
+1. **服务鲁棒性优先**：不造成阻断性影响的问题提供兜底机制，不终止服务
+2. **Option 优先**：优先用 `Option<T>` 表达可失败操作，仅在必要时使用 `throw-try-catch`
+3. **if-let 解构**：解构 Option 时优先用 `if-let` 而非 `match case`
+
+### 5.2 消除的 throw 语句
+
+项目中原有 13 处 `throw` 语句，全部改为返回 `Option` 或结构化错误结果：
+
+| 函数 | 原始行为 | 优化后 |
+|------|----------|--------|
+| `parseNodeCoordinate` | throw 坐标解析失败 | 返回 `?((Int64,Int64),Int64)` |
+| `offsetForPoint` | throw 坐标越界 | 返回 `?Int64` |
+| `ensureWorkspacePath`（4 处副本） | throw 路径不存在/逃逸 | 返回 `?String` |
+| `ensurePlannedWorkspacePath`（3 处 throw） | throw 父目录/逃逸 | 返回 `?String` |
+| `LspSessionManager.sendFrame` | throw 进程未启动 | 返回 `Bool` |
+
+### 5.3 if-let 解构模式
+
+统一使用 `if-let` 替代 `match case` 解构 Option，主要模式：
+
+**多条件组合（&&）**：
+```cangjie
+if (let Some(open) <- line.indexOf("[", fromIndex) &&
+    let Some(comma) <- line.indexOf(",", open) &&
+    let Some(close) <- line.indexOf("]", comma)) {
+    // 三个索引同时有效时执行解析
+}
+```
+
+**嵌套 if-let**：
+```cangjie
+if (let Some(fullPath) <- ensureWorkspacePath(repoRoot, path)) {
+    // 路径有效时执行正常逻辑
+    if (let Some(startOffset) <- offsetForPoint(current, ...) &&
+        let Some(endOffset) <- offsetForPoint(current, ...)) {
+        // 两个偏移都有效时执行替换
+    }
+}
+return "错误兜底消息"
+```
+
+**简洁兜底（??）**：
+```cangjie
+return ensureWorkspacePath(repoRoot, path) ?? repoRoot
+```
+
+### 5.4 保留的 try-catch
+
+以下场景保留 `try-catch` 作为最终安全网：
+
+| 位置 | 原因 |
+|------|------|
+| `callMcpTool` | 顶层工具调度，防止任何未预期异常终止服务 |
+| `McpRuntime.handleRequest` | 顶层请求处理，防止 JSON 解析异常 |
+| `runLspRequestColdStart/probeLspServer` | LSP 子进程交互，防止 I/O 异常 |
+| `analysisRunCommand/lspRunCommand` | 外部命令执行，防止进程启动失败 |
+| `LspSessionManager.ensureInitialized/query` | 长驻进程状态管理，防止通信异常 |
+| `FileBackupStore.rollbackAll` | 文件恢复，静默跳过单文件写入失败 |
+
+### 5.5 涉及文件
+
+| 文件 | 说明 |
+|------|------|
+| `service/src/common/helpers.cj` | `ensureWorkspacePath` → `?String` |
+| `service/src/analysis/analyzer.cj` | `parseNodeCoordinate/offsetForPoint` → Option，`editAstNode/analyzeCangjieFile` 用 if-let |
+| `service/src/lsp/queries.cj` | `lspEnsureWorkspacePath` → `?String`，查询函数用 if-let |
+| `service/src/lsp/session.cj` | `sendFrame` → Bool，`resolveLspCommand/inspectLspStatus/ensureInitialized/query/close` 全部用 if-let |
+| `service/src/projects/templates.cj` | `ensurePlannedWorkspacePath` → `?String`，`bootstrapJsonParserProject` 嵌套 if-let |
+| `service/src/tools/workspace.cj` | 路径校验全部 if-let + ?? 兜底 |
+| `service/src/tools/ast.cj` | AST 工具全部 if-let 兜底 |
+| `service/src/code_quality_test.cj` | 适配 Option 返回值，新增越界测试 |
+| `service/src/ast_edit_test.cj` | 适配 `offsetForPoint` 的 `?Int64` 返回 |
