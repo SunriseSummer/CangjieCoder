@@ -19,6 +19,7 @@ public enum JsonValue <: ToString {
             case JNull => "null"
             case JBool(b) => if (b) { "true" } else { "false" }
             case JNumber(n) =>
+                // 整数显示优化：Float64 到 Int64 往返比较判断是否为整数
                 if (n == Float64(Int64(n))) {
                     "${Int64(n)}"
                 } else {
