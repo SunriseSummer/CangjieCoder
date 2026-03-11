@@ -94,7 +94,7 @@ public class ServiceClient {
         let commandTemplate = resolveServiceCommand(config.serviceDir, config.workspaceRoot)
         let script = commandTemplate.replace("__PAYLOAD__", clientShellQuote(payload))
         let (status, stdoutBytes, stderrBytes) = executeWithOutput("bash",
-            ["-lc", script],
+            ["-c", script],
             workingDirectory: Path(config.serviceDir),
             stdOut: Pipe,
             stdErr: Pipe)

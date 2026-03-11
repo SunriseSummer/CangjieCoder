@@ -11,6 +11,27 @@ import cangjiecoder.json.*
 import cangjiecoder.mcp.*
 import cangjiecoder.tools.*
 
+// POSIX write 系统调用声明（用于绕过仓颉 ConsoleWriter 的管道缓冲问题）
+foreign func write(fd: Int32, buf: CPointer<UInt8>, count: UIntNative): IntNative
+
+// 直接通过 POSIX write 系统调用写入 stdout（绕过所有缓冲层）
+func writeStdoutDirect(content: String): Unit {
+    let bytes = content.toArray()
+    unsafe {
+        var handle = acquireArrayRawData(bytes)
+        var offset: Int64 = 0
+        while (offset < bytes.size) {
+            let n = write(1, CPointer<UInt8>(handle.pointer) + offset,
+                          UIntNative(bytes.size - offset))
+            if (Int64(n) <= 0) {
+                break
+            }
+            offset += Int64(n)
+        }
+        releaseArrayRawData(handle)
+    }
+}
+
 // ── MCP 工具调度 ─────────────────────────────────────
 
 // 在工具注册表中查找并调用指定名称的工具处理函数。
@@ -142,14 +163,12 @@ class McpRuntime {
 // 启动 MCP stdio 服务：循环读取 stdin 帧 → 处理请求 → 写回响应帧
 func startMcpStdioServer(runtime: McpRuntime): Unit {
     let reader = getStdIn()
-    let writer = getStdOut()
     while (true) {
         match (readStdioFrame(reader)) {
             case Some(body) =>
                 match (runtime.handleRequest(body)) {
                     case Some(response) =>
-                        writer.write(encodeMcpFrame(response))
-                        writer.flush()
+                        writeStdoutDirect(encodeMcpFrame(response))
                     case None => ()
                 }
             case None =>
