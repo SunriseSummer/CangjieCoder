@@ -228,9 +228,9 @@ def run_tests(client_factory):
                                  "cangjie.ast_summary", "cangjie.ast_query_nodes_with_text")
             )
         )),
-        # Total tool count should be 24
+        # Total tool count should be 26 (24 original + workspace.set_root + workspace.get_root)
         ("tools_total_count", lambda: (
-            len(resp4[0].get("tools", [])) == 24
+            len(resp4[0].get("tools", [])) == 26
         )),
     ]
     for name, check in tests_s4:
