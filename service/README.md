@@ -13,12 +13,13 @@ service/
 ├── cjpm.toml       # 项目配置（依赖 cangjie-tree-sitter 库）
 ├── src/
 │   ├── analysis/   # 代码分析与 AST 编辑（依赖外部 tree-sitter CLI）
-│   ├── common/     # 共享类型与工具函数
+│   ├── common/     # 共享类型（AppConfig、McpToolContext、McpToolHandler）与工具函数
 │   ├── json/       # JSON 解析与序列化工具
 │   ├── lsp/        # LSP 协议、会话管理与查询
-│   ├── mcp/        # MCP 协议层（工具定义、帧编解码）
+│   ├── mcp/        # MCP 协议层（工具定义、帧编解码、运行时与请求调度）
 │   ├── skills/     # 技能注册表
-│   └── tools/      # MCP 工具处理函数（按类别拆分）
+│   ├── tools/      # MCP 工具处理函数（技能、AST、LSP）
+│   └── workspace/  # 工作区管理（根目录管理、文件操作、命令执行）
 └── README.md
 ```
 

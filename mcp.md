@@ -53,7 +53,10 @@
 
 **架构要点**：
 - MCP 协议层在 `service/src/mcp/protocol.cj` 中定义工具元数据（名称、参数、描述）
-- 工具处理函数在 `service/src/mcp_handlers.cj` 中实现，每个处理函数接收 `McpToolContext`（含 `workspaceRoot` 和 `serviceRoot`）和参数 `JsonObject`
+- MCP 运行时在 `service/src/mcp/handlers.cj` 中实现请求分发和工具调度
+- 工作区管理在 `service/src/workspace/` 包中实现（helpers/root_manager/files/commands）
+- 工具处理函数按类别分布：`tools/`（技能、AST、LSP）和 `workspace/`（文件、命令、根目录管理）
+- 共享类型 `McpToolContext` 和 `McpToolHandler` 在 `service/src/common/types.cj` 中定义
 - 工作区路径支持多级动态设置：`initialize` roots 自动检测、`workspace.set_root` 会话级切换、`workspacePath` 参数单次覆盖
 - 所有涉及路径的工具通过 `ensureWorkspacePath()` 验证路径不会逃逸出仓库根目录
 - 所有修改型操作通过 `FileBackupStore` 自动备份，支持 `workspace.rollback` 一键恢复
@@ -179,16 +182,17 @@ handleToolsCall() → resolveEffectiveWorkspaceRoot(runtime.workspaceRoot, args)
                               McpToolContext(effectiveRoot, serviceRoot) → 工具处理函数
 ```
 
-**关键函数**（`service/src/mcp_handlers.cj`）：
+**关键函数**：
 
-| 函数 | 职责 |
-|------|------|
-| `extractFirstRootPath(params)` | 从 `initialize` 参数中解析第一个 root 的 `file://` URI |
-| `fileUriToPath(uri)` | 将 `file:///path` URI 转换为本地路径 `/path` |
-| `resolveEffectiveWorkspaceRoot(default, args)` | 检查工具参数中的 `workspacePath` 覆盖 |
-| `handleSetRoot(runtime, args)` | 验证并更新 `McpRuntime.workspaceRoot` |
-| `handleGetRoot(runtime)` | 返回当前 `workspaceRoot` |
-| `isDirectory(path)` | 检查路径是否为已存在的目录 |
+| 函数 | 所在文件 | 职责 |
+|------|---------|------|
+| `extractFirstRootPath(params)` | `workspace/helpers.cj` | 从 `initialize` 参数中解析第一个 root 的 `file://` URI |
+| `fileUriToPath(uri)` | `workspace/helpers.cj` | 将 `file:///path` URI 转换为本地路径 `/path` |
+| `resolveEffectiveWorkspaceRoot(default, args)` | `workspace/helpers.cj` | 检查工具参数中的 `workspacePath` 覆盖 |
+| `workspaceSetRootJson(path)` | `workspace/root_manager.cj` | 验证路径并返回规范化结果 |
+| `workspaceGetRootJson(root)` | `workspace/root_manager.cj` | 返回当前 `workspaceRoot` |
+| `isDirectory(path)` | `workspace/helpers.cj` | 检查路径是否为已存在的目录 |
+| `handleToolsCall(runtime, ...)` | `mcp/handlers.cj` | MCP 工具调度入口，处理 set_root/get_root 和 workspacePath 覆盖 |
 
 ## 工具总览
 

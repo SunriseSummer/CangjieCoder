@@ -786,3 +786,38 @@ workspacePath 参数（单次覆盖）> workspace.set_root（会话级）> initi
 - `toolDefinitionsIncludeSetAndGetRoot` / `toolRegistryIncludesSetAndGetRoot` — 工具注册验证
 
 **测试汇总**：235 个 Cangjie 测试全部通过
+
+#### 8.6 代码架构重构
+
+根据代码检视意见，对工作区管理代码进行了架构重构：
+
+**新增 `cangjiecoder.workspace` 包**（`service/src/workspace/`）：
+
+| 文件 | 职责 |
+|------|------|
+| `helpers.cj` | 工作区路径辅助函数：`isDirectory`、`fileUriToPath`、`extractFirstRootPath`、`resolveEffectiveWorkspaceRoot` |
+| `root_manager.cj` | 工作区根目录管理业务逻辑：`workspaceSetRootJson`、`workspaceGetRootJson`、`handleWorkspaceRootPlaceholder` |
+| `files.cj` | 工作区文件操作工具处理函数：read/list/search/replace/create/rollback |
+| `commands.cj` | 工作区命令执行工具处理函数：run_build/run_test/run_command |
+
+**`mcp_handlers.cj` → `mcp/handlers.cj`**：
+- 移入 `cangjiecoder.mcp` 包，与 `protocol.cj` 同包
+- 职责明确：纯粹的 MCP 协议请求调度（JSON-RPC 方法处理、工具调度、stdio 服务循环）
+- 不再混入工作区管理的具体业务逻辑
+
+**共享类型上提**：
+- `McpToolContext` 和 `McpToolHandler` 从 `cangjiecoder.tools` 移至 `cangjiecoder.common`
+- 解决了 `cangjiecoder.tools` ↔ `cangjiecoder.workspace` 的循环依赖问题
+
+**删除旧文件**：
+- `service/src/mcp_handlers.cj`（已拆分到 `mcp/handlers.cj` + `workspace/`）
+- `service/src/tools/workspace.cj`（已拆分到 `workspace/files.cj` + `workspace/commands.cj`）
+
+**依赖关系**（无循环）：
+```
+cangjiecoder.common  ← 共享类型（McpToolContext, McpToolHandler, AppConfig）
+    ↑        ↑
+cangjiecoder.workspace    cangjiecoder.tools
+    ↑                         ↑
+    └─────── cangjiecoder.mcp ┘
+```
