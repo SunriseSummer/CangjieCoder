@@ -105,11 +105,10 @@ func shouldTriggerFollowUpRound(prompt: String,
 }
 
 func planningContext(client: ServiceClient, config: AgentConfig, toolsJson: String): AgentPlanningContext {
-    // 每轮都重新抓取工作区快照与 example 列表，
-    // 避免 bootstrap / 编辑之后继续拿旧状态做规划。
+    // 每轮都重新抓取工作区快照，
+    // 避免编辑之后继续拿旧状态做规划。
     let workspaceSnapshot = client.callTool("workspace.list_files", JsonObject()).toString()
-    let exampleProjects = client.callTool("project.list_examples", JsonObject()).toString()
-    return AgentPlanningContext(config.prompt, toolsJson, workspaceSnapshot, exampleProjects)
+    return AgentPlanningContext(config.prompt, toolsJson, workspaceSnapshot)
 }
 
 func printRoundPlan(round: Int64, plan: AgentPlan, steps: Array<PlannedToolCall>): Unit {

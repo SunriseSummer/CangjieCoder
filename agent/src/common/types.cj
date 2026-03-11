@@ -51,6 +51,5 @@ public struct ModelTurn {
 public struct AgentPlanningContext {
     public AgentPlanningContext(public let userPrompt: String,
                                 public let toolsJson: String,
-                                public let workspaceSnapshot: String,
-                                public let exampleProjectsJson: String) {}
+                                public let workspaceSnapshot: String) {}
 }

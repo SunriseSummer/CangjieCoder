@@ -40,6 +40,32 @@ public func ensureWorkspacePath(repoRoot: String, path: String): ?String {
     return canonicalPath
 }
 
+// 校验计划创建的路径是否在工作区内，返回 None 表示父目录不存在或路径逃逸了工作区。
+// 与 ensureWorkspacePath 不同，此函数允许目标路径本身尚不存在（用于文件创建场景）。
+public func ensurePlannedWorkspacePath(repoRoot: String, path: String): ?String {
+    let canonicalRoot = canonicalize(repoRoot).toString()
+    let fullPath = resolveRepoPath(repoRoot, path)
+    let plannedPath = Path(fullPath)
+    let parentPath = plannedPath.parent
+    if (parentPath.toString().isEmpty()) {
+        return None
+    }
+    var existingParentPath = parentPath
+    var existingParent = existingParentPath.toString()
+    while (!existingParent.isEmpty() && !exists(existingParent)) {
+        existingParentPath = existingParentPath.parent
+        existingParent = existingParentPath.toString()
+    }
+    if (existingParent.isEmpty()) {
+        return None
+    }
+    let canonicalParent = canonicalize(existingParent).toString()
+    if (!canonicalParent.startsWith(canonicalRoot)) {
+        return None
+    }
+    return fullPath
+}
+
 // Convert an absolute or in-repo path into a workspace-relative path.
 // Returns "." when the path is the workspace root, and intentionally returns the original input unchanged for non-existent paths.
 public func workspaceRelativePath(repoRoot: String, path: String): String {

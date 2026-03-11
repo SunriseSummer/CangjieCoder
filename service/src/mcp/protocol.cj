@@ -35,12 +35,11 @@ public struct ToolDefinition {
 
 // ── 工具注册表构建 ───────────────────────────────────
 
-// 构建全部 27 个 MCP 工具的元数据定义，分为以下类别：
+// 构建全部 24 个 MCP 工具的元数据定义，分为以下类别：
 // - 技能检索（skills）
 // - 工作区操作（workspace）
 // - 仓颉分析与 AST（cangjie）
 // - LSP 查询（cangjie.lsp_*）
-// - 项目模板（project）
 // - 事务回滚（workspace.rollback）
 public func buildToolDefinitions(): Array<ToolDefinition> {
     let defs = ArrayList<ToolDefinition>()
@@ -86,15 +85,6 @@ public func buildToolDefinitions(): Array<ToolDefinition> {
     // 仓颉分析
     defs.add(ToolDefinition("cangjie.analyze_file", "Run tree-sitter/cjlint/cjc based analysis for a Cangjie source file.", [
         ToolArgSpec("path", "string", "Cangjie source file path.", true)
-    ]))
-    // 项目模板
-    defs.add(ToolDefinition("project.list_examples", "List built-in Cangjie example projects that can be bootstrapped into the workspace.", []))
-    defs.add(ToolDefinition("project.bootstrap_json_parser", "Copy the built-in JsonParser example project into a target workspace path.", [
-        ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
-    ]))
-    defs.add(ToolDefinition("project.bootstrap", "Bootstrap any built-in example project by its id into a target workspace path. Use project.list_examples to discover available project ids.", [
-        ToolArgSpec("project_id", "string", "The example project id (e.g. json_parser, todo_list, calculator).", true),
-        ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
     ]))
     // LSP 查询
     defs.add(ToolDefinition("cangjie.lsp_status", "Inspect whether a Cangjie LSP binary is configured or discoverable.", []))

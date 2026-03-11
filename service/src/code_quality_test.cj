@@ -487,9 +487,9 @@ class McpProtocolExtendedTest {
 
     @TestCase
     func buildToolDefinitionsReturns22Tools() {
-        // 应注册恰好 27 个工具
+        // 应注册恰好 24 个工具
         let defs = buildToolDefinitions()
-        @Expect(defs.size, 27)
+        @Expect(defs.size, 24)
     }
 
     @TestCase

@@ -112,26 +112,6 @@ func pruneFallbackSteps(steps: ArrayList<PlannedToolCall>): Unit {
     }
 }
 
-public func extractTargetPathFromPrompt(prompt: String): String {
-    let marker = "target/"
-    let start = match (prompt.indexOf(marker)) {
-        case Some(value) => value
-        case None => return "target/generated-json-parser"
-    }
-    let delimiters = [" ", "\n", "\t", "，", ",", "。", "\"", "'"]
-    var end = prompt.size
-    for (delimiter in delimiters) {
-        match (prompt.indexOf(delimiter, start)) {
-            case Some(value) =>
-                if (value > start && value < end) {
-                    end = value
-                }
-            case None => ()
-        }
-    }
-    return prompt[start..end]
-}
-
 func extractPromptFilePath(prompt: String, workspaceFiles: Array<String>): String {
     for (file in workspaceFiles) {
         if (file.endsWith(".cj") && prompt.contains(file)) {
@@ -163,33 +143,24 @@ public func promptNeedsVerification(prompt: String): Bool {
         prompt.contains("验证")
 }
 
-// 判断用户提示词是否在请求创建新项目
+// 判断用户提示词是否在请求创建新项目（使用 cjpm init 初始化）
 func isNewProjectRequest(prompt: String): Bool {
     let normalized = prompt.toAsciiLower()
-    if (normalized.contains("new project") || normalized.contains("bootstrap")) {
+    if (normalized.contains("new project") || normalized.contains("init")) {
         return true
     }
-    if (containsAny(prompt, ["新项目", "示例项目", "新建"])) {
-        return true
-    }
-    if (prompt.contains("创建") && prompt.contains("项目")) {
-        return true
-    }
-    return normalized.contains("jsonparser") || normalized.contains("json parser") ||
-           normalized.contains("todo") || normalized.contains("calculator") ||
-           (prompt.contains("计算器") || prompt.contains("待办"))
+    return containsAny(prompt, ["新项目", "新建项目", "创建项目", "初始化项目"])
 }
 
-// 从提示词中推测最合适的示例项目 id
-func detectExampleProjectId(prompt: String): String {
-    let normalized = prompt.toAsciiLower()
-    if (normalized.contains("todo") || prompt.contains("待办")) {
-        return "todo_list"
-    }
-    if (normalized.contains("calc") || prompt.contains("计算器") || prompt.contains("表达式")) {
-        return "calculator"
-    }
-    return "json_parser"
+// 判断是否需要优先查阅技能文档
+func promptNeedsSkills(prompt: String): Bool {
+    return containsAny(prompt, [
+        "怎么写", "怎样写", "如何写", "用法", "示例", "教程",
+        "how to", "example", "tutorial", "usage",
+        "JSON", "json", "HTTP", "http", "enum", "class", "struct",
+        "泛型", "接口", "模式匹配", "并发", "异常",
+        "generic", "interface", "pattern", "concurrent", "exception"
+    ])
 }
 
 public func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
@@ -200,13 +171,20 @@ public func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let workspaceFiles = extractWorkspaceFiles(context.workspaceSnapshot)
     let steps = ArrayList<PlannedToolCall>()
 
+    // 新建项目：使用 cjpm init 创建然后进行构建验证
     if (isNewProjectRequest(prompt)) {
-        let projectId = detectExampleProjectId(prompt)
-        let arguments = JsonObject()
-        arguments.put("project_id", JsonString(projectId))
-        arguments.put("path", JsonString(extractTargetPathFromPrompt(prompt)))
-        steps.add(PlannedToolCall("project.bootstrap", arguments, "Bootstrap the ${projectId} example project for a new-project style request."))
-        return AgentPlan("Bootstrap a ${projectId} project and validate it locally.", steps.toArray())
+        let initArgs = JsonObject()
+        initArgs.put("command", JsonString("cjpm init"))
+        steps.add(PlannedToolCall("workspace.run_command", initArgs, "Initialize a new Cangjie project with cjpm init."))
+        steps.add(PlannedToolCall("workspace.run_build", JsonObject(), "Build the newly initialized project to verify it compiles."))
+        return AgentPlan("Initialize a new Cangjie project with cjpm init and verify the build.", steps.toArray())
+    }
+
+    // 需要查阅技能文档时，在工作区概览之前先搜索相关技能
+    if (promptNeedsSkills(prompt)) {
+        let skillArgs = JsonObject()
+        skillArgs.put("query", JsonString(prompt))
+        steps.add(PlannedToolCall("skills.search", skillArgs, "Search Cangjie skills for relevant language features and patterns."))
     }
 
     steps.add(PlannedToolCall("workspace.list_files", JsonObject(), "Inspect the workspace layout before deeper actions."))

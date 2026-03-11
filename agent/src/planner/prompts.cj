@@ -72,9 +72,6 @@ ${context.toolsJson}
 Workspace overview:
 ${workspaceSummary}
 
-Built-in example projects (JSON):
-${context.exampleProjectsJson}
-
 Return strict JSON only with this shape:
 {
   "summary": "one sentence",
@@ -90,11 +87,20 @@ Return strict JSON only with this shape:
 Rules:
 - choose at most ${MAX_PLAN_STEPS} steps
 - use only tool names from the provided tool list
-- if the user asks for a new project, use project.bootstrap with a matching project_id (json_parser, todo_list, calculator)
+- if the user asks for a new project, use workspace.run_command with "cjpm init" to initialize it
 - prefer reading configuration/docs or analyzing code before destructive changes
 - include workspace.run_build / workspace.run_test when they are clearly needed
 - do not wrap the JSON in markdown
 ${PLAN_EXPLORE_RULE}
+
+Cangjie development best practices (use these to guide your plan):
+- Bool is a keyword in Cangjie; do not use it as an enum variant name (use prefixed names like JBool)
+- for (ch in str) iterates UInt8 bytes, not Rune chars; use substring slicing for character-level processing
+- Float64.parse() requires import std.convert.*
+- prefer Option<T> (if-let) over try-catch for recoverable errors
+- always run workspace.run_build after code changes to catch compile errors early
+- use skills.search to look up Cangjie language features (enum, pattern matching, generics, etc.) before writing code
+- when analyzing code, prefer cangjie.ast_summary for an overview, then cangjie.ast_query_nodes for specific node types
 """
 }
 
