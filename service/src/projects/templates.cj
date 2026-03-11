@@ -17,8 +17,20 @@ public func listExampleProjects(serviceRoot: String): Array<ExampleProjectSpec> 
         ExampleProjectSpec(
             "json_parser",
             "JsonParser example project",
-            "Buildable and testable Cangjie JsonParser example project for the first autonomous project workflow.",
+            "Full recursive-descent JSON parser demonstrating enum, class, ArrayList, pattern matching, string processing, and exception handling.",
             "${examplesRoot}/json_parser"
+        ),
+        ExampleProjectSpec(
+            "todo_list",
+            "TodoList CLI application",
+            "Todo list manager demonstrating struct, enum, ArrayList, pattern matching, filtering, sorting, and formatted output.",
+            "${examplesRoot}/todo_list"
+        ),
+        ExampleProjectSpec(
+            "calculator",
+            "Expression calculator",
+            "Arithmetic expression calculator demonstrating recursive enum AST, recursive-descent parsing, operator precedence, and expression evaluation.",
+            "${examplesRoot}/calculator"
         )
     ]
 }
@@ -61,14 +73,19 @@ public func ensurePlannedWorkspacePath(repoRoot: String, path: String): ?String 
 }
 
 public func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: String, destination: String): String {
+    return bootstrapExampleProject(serviceRoot, workspaceRoot, "json_parser", destination)
+}
+
+// 通用示例项目引导：按 projectId 查找模板并复制到目标目录
+public func bootstrapExampleProject(serviceRoot: String, workspaceRoot: String, projectId: String, destination: String): String {
     if (let Some(outputPath) <- ensurePlannedWorkspacePath(workspaceRoot, destination)) {
         if (exists(outputPath)) {
             return "Destination already exists: ${outputPath}"
         }
 
-        if (let Some(project) <- findExampleProject(serviceRoot, "json_parser")) {
+        if (let Some(project) <- findExampleProject(serviceRoot, projectId)) {
             if (!exists(project.templatePath)) {
-                return "JsonParser example template is missing: ${project.templatePath}"
+                return "${project.name} template is missing: ${project.templatePath}"
             }
             let outputParent = Path(outputPath).parent.toString()
             if (!outputParent.isEmpty() && !exists(outputParent)) {
@@ -81,9 +98,9 @@ public func bootstrapJsonParserProject(serviceRoot: String, workspaceRoot: Strin
             copy(project.templatePath, to: outputPath)
             removeIfExists("${outputPath}/target", recursive: true)
             removeIfExists("${outputPath}/cjpm.lock")
-            return "Bootstrapped JsonParser example at ${outputPath}"
+            return "Bootstrapped ${project.name} at ${outputPath}"
         }
-        return "JsonParser example template is missing"
+        return "Example project '${projectId}' not found"
     }
     return "Invalid destination path: ${destination}"
 }

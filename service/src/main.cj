@@ -25,6 +25,7 @@ func printUsage(): Unit {
     println("  skills-search <query>         Search skills by keyword")
     println("  examples                      List example projects")
     println("  bootstrap-json-parser <path>  Generate a JSON parser project at <path>")
+    println("  bootstrap <id> <path>         Generate an example project by id at <path>")
     println("  analyze <path>                Analyze a Cangjie source file")
     println("  create-file <path> [content]  Create a new workspace file")
     println("  lsp-status                    Check LSP availability")
@@ -131,6 +132,21 @@ func cmdBootstrapJsonParser(config: AppConfig, nonOptions: Array<String>): Int64
     return 0
 }
 
+func cmdBootstrap(config: AppConfig, nonOptions: Array<String>): Int64 {
+    let projectId = nonOptionAt(nonOptions, 1)
+    let path = nonOptionAt(nonOptions, 2)
+    if (projectId.isEmpty() || path.isEmpty()) {
+        eprintln("bootstrap requires a project id and target path")
+        eprintln("Available projects:")
+        for (project in listExampleProjects(config.serviceRoot)) {
+            eprintln("  ${project.id} - ${project.description}")
+        }
+        return 1
+    }
+    println(bootstrapExampleProject(config.serviceRoot, config.workspaceRoot, projectId, path))
+    return 0
+}
+
 func cmdAnalyze(config: AppConfig, nonOptions: Array<String>): Int64 {
     let path = nonOptionAt(nonOptions, 1)
     if (path.isEmpty()) {
@@ -217,6 +233,7 @@ func buildSubcommandRegistry(): HashMap<String, CliSubcommandHandler> {
     registry["skills-search"] = cmdSkillsSearch
     registry["examples"] = cmdExamples
     registry["bootstrap-json-parser"] = cmdBootstrapJsonParser
+    registry["bootstrap"] = cmdBootstrap
     registry["analyze"] = cmdAnalyze
     registry["create-file"] = cmdCreateFile
     registry["lsp-status"] = cmdLspStatus

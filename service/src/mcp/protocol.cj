@@ -92,6 +92,10 @@ public func buildToolDefinitions(): Array<ToolDefinition> {
     defs.add(ToolDefinition("project.bootstrap_json_parser", "Copy the built-in JsonParser example project into a target workspace path.", [
         ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
     ]))
+    defs.add(ToolDefinition("project.bootstrap", "Bootstrap any built-in example project by its id into a target workspace path. Use project.list_examples to discover available project ids.", [
+        ToolArgSpec("project_id", "string", "The example project id (e.g. json_parser, todo_list, calculator).", true),
+        ToolArgSpec("path", "string", "Destination directory to create inside the workspace.", true)
+    ]))
     // LSP 查询
     defs.add(ToolDefinition("cangjie.lsp_status", "Inspect whether a Cangjie LSP binary is configured or discoverable.", []))
     defs.add(ToolDefinition("cangjie.lsp_probe", "Run a lightweight initialize/shutdown probe against the configured Cangjie LSP server.", []))

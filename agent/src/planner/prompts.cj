@@ -90,7 +90,7 @@ Return strict JSON only with this shape:
 Rules:
 - choose at most ${MAX_PLAN_STEPS} steps
 - use only tool names from the provided tool list
-- if the user asks for a new project, you may use project.bootstrap_json_parser
+- if the user asks for a new project, use project.bootstrap with a matching project_id (json_parser, todo_list, calculator)
 - prefer reading configuration/docs or analyzing code before destructive changes
 - include workspace.run_build / workspace.run_test when they are clearly needed
 - do not wrap the JSON in markdown

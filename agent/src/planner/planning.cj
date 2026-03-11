@@ -175,7 +175,21 @@ func isNewProjectRequest(prompt: String): Bool {
     if (prompt.contains("创建") && prompt.contains("项目")) {
         return true
     }
-    return normalized.contains("jsonparser") || normalized.contains("json parser")
+    return normalized.contains("jsonparser") || normalized.contains("json parser") ||
+           normalized.contains("todo") || normalized.contains("calculator") ||
+           (prompt.contains("计算器") || prompt.contains("待办"))
+}
+
+// 从提示词中推测最合适的示例项目 id
+func detectExampleProjectId(prompt: String): String {
+    let normalized = prompt.toAsciiLower()
+    if (normalized.contains("todo") || prompt.contains("待办")) {
+        return "todo_list"
+    }
+    if (normalized.contains("calc") || prompt.contains("计算器") || prompt.contains("表达式")) {
+        return "calculator"
+    }
+    return "json_parser"
 }
 
 public func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
@@ -187,10 +201,12 @@ public func buildFallbackPlan(context: AgentPlanningContext): AgentPlan {
     let steps = ArrayList<PlannedToolCall>()
 
     if (isNewProjectRequest(prompt)) {
+        let projectId = detectExampleProjectId(prompt)
         let arguments = JsonObject()
+        arguments.put("project_id", JsonString(projectId))
         arguments.put("path", JsonString(extractTargetPathFromPrompt(prompt)))
-        steps.add(PlannedToolCall("project.bootstrap_json_parser", arguments, "Bootstrap the starter project for a new-project style request."))
-        return AgentPlan("Bootstrap a starter project and validate it locally.", steps.toArray())
+        steps.add(PlannedToolCall("project.bootstrap", arguments, "Bootstrap the ${projectId} example project for a new-project style request."))
+        return AgentPlan("Bootstrap a ${projectId} project and validate it locally.", steps.toArray())
     }
 
     steps.add(PlannedToolCall("workspace.list_files", JsonObject(), "Inspect the workspace layout before deeper actions."))
