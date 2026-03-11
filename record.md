@@ -885,3 +885,46 @@ skills analysis lsp workspace   ← 各领域包（含工具处理函数）
 - `run_all.py` — 注册 Workspace Root 测试模块
 
 **测试汇总**：235 个 Cangjie 测试 + 151 个 Python 测试全部通过
+
+### 2.9 Skills 分词优化与 AST+LSP 端到端测试
+
+#### 9.1 分词与检索优化
+
+优化 `service/src/skills/registry.cj` 中的 `tokenizeQuery()` 函数，提升中英文混合查询的检索质量：
+
+- **中英文交界拆分**：新增 `splitMixedScript()` 函数，在文字类型交界处自动拆分混合片段。例如 `"HTTP服务器"` 被拆分为 `["HTTP", "服务器"]`，避免产生无意义的跨语言 bigram（如 `"P服"`）
+- **复合词拆分**：支持按下划线 `_` 和连字符 `-` 拆分英文复合词。例如 `"ast_query_nodes"` 拆分为 `["ast", "query", "nodes"]`
+- **中文专用 bigram**：bigram 子词仅对中文片段生成，英文词保持完整匹配，提升检索精确度
+- **扩展停用词**：新增 `需要`、`怎样`、`哪个`、`一个` 等中文虚词过滤
+
+**涉及文件**：`service/src/skills/registry.cj`
+
+#### 9.2 端到端测试: Skills 能力与 AST+LSP 协作最优实践
+
+新增 `tests/e2etest_skills_ast_lsp/` 端到端测试，侧重 Skills 搜索能力和 AST+LSP 服务的组合使用最优实践。
+
+**测试场景**：AI Agent 从零搭建仓颉笔记管理应用（NotePad），包含 8 个开发阶段、40 个检查点：
+
+1. **Skills 深度搜索**：中文查询（枚举→enum）、英文查询（class→class）、中英文混合（HTTP服务器→http_server）、批量搜索（5 个查询）、prompt_context 上下文生成
+2. **项目搭建**：创建多文件项目（note.cj/store.cj/main.cj），含故意缺陷
+3. **AST 快速扫描**：ast_summary/ast_parse/ast_list_nodes 微秒级结构分析
+4. **AST→LSP 组合（Pattern 1）**：AST 快速定位函数结构 → 发现跨文件引用 → LSP 跳转定义
+5. **LSP→AST 组合（Pattern 2）**：LSP 全局搜索符号 → AST 精确提取枚举和类的完整源码
+6. **编译迭代**：首次编译失败（缺少 import std.convert.*）→ 修复 → 编译成功
+7. **测试迭代**：首次测试失败（枚举缺少 @Derive[Equatable]）→ replace_text 修复 → 测试通过
+8. **纯 AST 验证（Pattern 3）**：ast_query_nodes + ast_parse 确认最终项目结构完整
+
+**三种 AST+LSP 最优实践模式**（参考 `mcp.md` 「组合使用的典型工作流」）：
+
+| 模式 | 工作流 | 适用场景 |
+|------|--------|----------|
+| Pattern 1 | AST 快速扫描 → LSP 跨文件跳转 | 需要理解跨文件引用关系时 |
+| Pattern 2 | LSP 全局搜索 → AST 提取代码 | 需要在全项目中定位并提取目标代码时 |
+| Pattern 3 | 纯 AST 快速迭代 | CI/CD 环境或无 SDK 的轻量验证 |
+
+**涉及文件**：
+- `tests/e2etest_skills_ast_lsp/run.py` — 测试主脚本
+- `tests/e2etest_skills_ast_lsp/codepiece1-6.ai` — 测试代码片段
+- `tests/e2etest_skills_ast_lsp/skills` → `../../.github/skills` 符号链接
+
+**测试汇总**：235 个 Cangjie 测试 + 端到端测试（32 + 39 + 40 = 111 个检查点）全部通过

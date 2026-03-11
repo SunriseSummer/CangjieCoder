@@ -1,0 +1,38 @@
+// 应用入口 — 演示笔记管理的基本功能
+// 注意: 此版本故意缺少 import std.convert.*（Int64.parse 需要）
+package notepad
+
+import std.collection.*
+
+main() {
+    println("NotePad v1.0")
+
+    let store = NoteStore()
+
+    // 添加示例笔记
+    store.add(Note("学习仓颉语法", "掌握基本数据类型和控制流",
+                   priority: NotePriority.High, category: NoteCategory.Study))
+    store.add(Note("编写单元测试", "为核心功能编写单元测试",
+                   priority: NotePriority.Medium, category: NoteCategory.Work))
+    store.add(Note("阅读编译原理", "深入理解语法分析和代码生成",
+                   category: NoteCategory.Study))
+    store.add(Note("整理工作笔记", "梳理本周工作内容",
+                   priority: NotePriority.Low, category: NoteCategory.Work))
+
+    // 按分类搜索
+    let studyNotes = store.findByCategory(NoteCategory.Study)
+    println("学习笔记: ${studyNotes.size} 条")
+
+    // 限制显示数量（故意的错误: 缺少 import std.convert.*）
+    let maxDisplay = Int64.parse("3")
+    var shown: Int64 = 0
+    for (note in studyNotes) {
+        if (shown >= maxDisplay) { break }
+        println("  - ${note.summary()}")
+        shown += 1
+    }
+
+    // 归档操作
+    store.archive("学习仓颉语法")
+    println(store.statistics())
+}

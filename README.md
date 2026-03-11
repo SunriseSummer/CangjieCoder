@@ -20,7 +20,11 @@ CangjieCoder 由三个仓颉项目组成：
 ├── cangjie-tree-sitter/  # tree-sitter 仓颉封装库（动态库，可独立复用）
 ├── service/              # MCP 工具服务（底层能力，仅 stdio MCP）
 ├── agent/                # 单智能体应用（大脑）
-├── tests/                # Python 集成测试与测试数据
+├── tests/                # Python 集成测试与端到端测试
+│   ├── e2etest_jsonparser/      # 端到端: JSON 解析器项目（编译迭代）
+│   ├── e2etest_taskmanager/     # 端到端: 任务管理器（AST 编辑/LSP 工具）
+│   ├── e2etest_skills_ast_lsp/  # 端到端: Skills 能力 + AST/LSP 最优实践
+│   └── cangjie/                 # 测试工作区
 ├── docs/                 # 补充说明文档
 ├── .github/skills/       # 仓颉 Skills 语料
 └── cangjie-docs-full/    # 仓颉语言完整文档

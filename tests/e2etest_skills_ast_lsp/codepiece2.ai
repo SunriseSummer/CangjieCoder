@@ -1,0 +1,60 @@
+// 笔记数据模型 — 枚举与类定义
+// 注意: AI 首次生成时故意遗漏了 @Derive[Equatable]
+package notepad
+
+// 笔记优先级枚举
+public enum NotePriority {
+    | Low
+    | Medium
+    | High
+
+    public func label(): String {
+        match (this) {
+            case Low => "低"
+            case Medium => "中"
+            case High => "高"
+        }
+    }
+}
+
+// 笔记分类枚举
+public enum NoteCategory {
+    | Work
+    | Personal
+    | Study
+    | Other
+
+    public func display(): String {
+        match (this) {
+            case Work => "工作"
+            case Personal => "个人"
+            case Study => "学习"
+            case Other => "其他"
+        }
+    }
+}
+
+// 笔记实体类
+public class Note {
+    public var title: String
+    public var content: String
+    public let priority: NotePriority
+    public let category: NoteCategory
+    public var archived: Bool
+
+    public init(title: String, content: String,
+                priority!: NotePriority = NotePriority.Medium,
+                category!: NoteCategory = NoteCategory.Other) {
+        this.title = title
+        this.content = content
+        this.priority = priority
+        this.category = category
+        this.archived = false
+    }
+
+    // 笔记摘要
+    public func summary(): String {
+        let status = if (archived) { "归档" } else { "活跃" }
+        return "[${status}] ${title} (${priority.label()})"
+    }
+}

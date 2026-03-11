@@ -1,0 +1,85 @@
+// NotePad 单元测试
+package notepad
+
+import std.unittest.*
+import std.unittest.testmacro.*
+import std.collection.*
+
+@Test
+class NoteTest {
+    // 测试笔记创建
+    @TestCase
+    func testCreateNote() {
+        let note = Note("测试笔记", "测试内容")
+        @Assert(note.title == "测试笔记")
+        @Assert(note.content == "测试内容")
+        @Assert(note.priority == NotePriority.Medium)    // 需要 @Derive[Equatable]
+        @Assert(note.category == NoteCategory.Other)      // 需要 @Derive[Equatable]
+        @Assert(note.archived == false)
+    }
+
+    // 测试笔记摘要
+    @TestCase
+    func testNoteSummary() {
+        let note = Note("测试笔记", "内容", priority: NotePriority.High)
+        @Assert(note.summary().contains("活跃"))
+        @Assert(note.summary().contains("测试笔记"))
+        @Assert(note.summary().contains("高"))
+        note.archived = true
+        @Assert(note.summary().contains("归档"))
+    }
+
+    // 测试存储添加和计数
+    @TestCase
+    func testNoteStore() {
+        let store = NoteStore()
+        store.add(Note("笔记A", "内容A", category: NoteCategory.Work))
+        store.add(Note("笔记B", "内容B", category: NoteCategory.Study))
+        @Assert(store.count == 2)
+    }
+
+    // 测试按标题搜索
+    @TestCase
+    func testFindByTitle() {
+        let store = NoteStore()
+        store.add(Note("仓颉入门", "基础语法"))
+        store.add(Note("仓颉进阶", "高级特性"))
+        store.add(Note("Python入门", "基础"))
+        let results = store.findByTitle("仓颉")
+        @Assert(results.size == 2)
+    }
+
+    // 测试按分类搜索
+    @TestCase
+    func testFindByCategory() {
+        let store = NoteStore()
+        store.add(Note("工作笔记1", "内容", category: NoteCategory.Work))
+        store.add(Note("学习笔记1", "内容", category: NoteCategory.Study))
+        store.add(Note("工作笔记2", "内容", category: NoteCategory.Work))
+        let workNotes = store.findByCategory(NoteCategory.Work)
+        @Assert(workNotes.size == 2)
+    }
+
+    // 测试归档功能
+    @TestCase
+    func testArchive() {
+        let store = NoteStore()
+        store.add(Note("待归档", "内容"))
+        @Assert(store.archive("待归档"))
+        @Assert(!store.archive("不存在"))
+        let found = store.findByTitle("待归档")
+        @Assert(found[0].archived == true)
+    }
+
+    // 测试统计信息
+    @TestCase
+    func testStatistics() {
+        let store = NoteStore()
+        store.add(Note("笔记1", "内容1"))
+        store.add(Note("笔记2", "内容2"))
+        store.archive("笔记1")
+        let stats = store.statistics()
+        @Assert(stats.contains("1 活跃"))
+        @Assert(stats.contains("1 归档"))
+    }
+}
