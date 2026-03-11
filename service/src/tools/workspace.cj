@@ -258,5 +258,6 @@ public func handleRollback(ctx: McpToolContext, _: JsonObject): String {
 // workspace.set_root 和 workspace.get_root 的占位处理函数。
 // 实际逻辑在 mcp_handlers.cj 的 handleToolsCall 中直接处理（需访问 McpRuntime）。
 public func handleWorkspaceRootPlaceholder(_: McpToolContext, _: JsonObject): String {
-    return toolMessageJson(false, "Internal error", "This tool should be handled at the runtime level")
+    return toolMessageJson(false, "Internal routing error",
+        "workspace.set_root and workspace.get_root must be handled by McpRuntime, not the tool registry")
 }

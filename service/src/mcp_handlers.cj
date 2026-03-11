@@ -35,13 +35,15 @@ func writeStdoutDirect(content: String): Unit {
 
 // ── MCP 工具调度 ─────────────────────────────────────
 
-// 检查路径是否为已存在的目录
+// 检查路径是否为已存在的目录。
+// 利用 Directory.isEmpty() 的异常行为：对目录返回 Bool（无论是否为空），对文件抛出异常。
 func isDirectory(path: String): Bool {
     if (!exists(path)) {
         return false
     }
     try {
-        Directory.isEmpty(Path(path))
+        // Directory.isEmpty 对目录返回 true/false，对非目录抛出异常
+        let _ = Directory.isEmpty(Path(path))
         return true
     } catch (_: Exception) {
         return false
@@ -76,7 +78,11 @@ func handleInitialize(runtime: McpRuntime, idJson: String, params: JsonObject): 
     if (!runtime.hasExplicitRepo) {
         if (let Some(rootPath) <- extractFirstRootPath(params)) {
             if (isDirectory(rootPath)) {
-                runtime.workspaceRoot = canonicalize(rootPath).toString()
+                try {
+                    runtime.workspaceRoot = canonicalize(rootPath).toString()
+                } catch (_: Exception) {
+                    // canonicalize 失败（权限问题等），保持默认工作区
+                }
             }
         }
     }
@@ -252,10 +258,15 @@ func extractFirstRootPath(params: JsonObject): ?String {
     }
 }
 
-// 将 file:// URI 转换为本地文件路径
+// file:// URI scheme 前缀（"file://" = 7 字符），路径从第 8 个字符（即 "/" ）开始
+let FILE_URI_SCHEME: String = "file://"
+
+// 将 file:// URI 转换为本地文件路径（如 "file:///home/user" → "/home/user"）
 func fileUriToPath(uri: String): ?String {
+    // 检查 "file:///" 确保 URI 包含绝对路径（第三个 / 是路径开头）
     if (uri.startsWith("file:///")) {
-        return uri[7..uri.size]
+        // 跳过 "file://"（7 字符），保留路径开头的 "/"
+        return uri[FILE_URI_SCHEME.size..uri.size]
     }
     return None
 }
