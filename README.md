@@ -20,7 +20,7 @@ CangjieCoder 由三个仓颉项目组成：
 ├── cangjie-tree-sitter/  # tree-sitter 仓颉封装库（动态库，可独立复用）
 ├── service/              # MCP 工具服务（底层能力，仅 stdio MCP）
 ├── agent/                # 单智能体应用（大脑）
-├── examples/             # service 内置模板资源
+├── tests/                # 内置示例项目模板（json_parser, todo_list, calculator）及测试
 ├── docs/                 # 补充说明文档
 ├── .github/skills/       # 仓颉 Skills 语料
 └── cangjie-docs-full/    # 仓颉语言完整文档

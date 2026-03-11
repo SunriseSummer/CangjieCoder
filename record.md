@@ -620,3 +620,65 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 - `mcp.md` — 更新工具总览表（22 → 26）、目录、概述；新增 4 个工具的详细文档（功能、原理、参数、示例）
 - `service/README.md` — 更新工具列表表格，新增 4 个工具条目
 - `record.md` — 新增第六章记录本次变更
+
+## 七、示例项目体系与通用引导工具
+
+### 7.1 问题与动机
+
+原有系统仅包含一个极简的 JsonParser 示例（只检测 JSON 值类型，不实际解析），且引导方式硬编码为单个 `project.bootstrap_json_parser` 工具，无法扩展到新的示例项目。
+Agent 的 fallback plan 也固定使用 `project.bootstrap_json_parser`，无法根据用户意图自动选择合适的示例模板。
+
+### 7.2 示例项目增强
+
+通过实际开发三个完整的仓颉项目，总结最佳实践：
+
+1. **JsonParser**（`tests/json_parser/`）
+   - 完整的递归下降 JSON 解析器，支持 null/bool/number/string/array/object 全部类型
+   - 演示：递归 enum（JNull/JBool/JNumber/JString/JArray/JObject）、ArrayList、模式匹配、字符串处理、异常处理
+   - 支持转义字符、科学计数法、嵌套结构、字段访问
+
+2. **TodoList**（`tests/todo_list/`）
+   - 待办事项管理器 CLI 应用
+   - 演示：struct、enum（Priority/TaskStatus）、ArrayList、过滤/排序、格式化输出
+
+3. **Calculator**（`tests/calculator/`）
+   - 表达式计算器，支持四则运算和括号
+   - 演示：递归 enum AST（Num/Add/Sub/Mul/Div）、递归下降解析、词法分析、运算符优先级
+
+### 7.3 开发经验总结
+
+**仓颉语言关键注意事项**：
+- `Bool` 是关键字，不能直接用作 enum 变体名，需要用 `JBool` 等前缀
+- `Float64.parse()` 需要 `import std.convert.*`
+- `for (ch in str)` 迭代的是 `UInt8` 字节而非 `Rune` 字符，字符串处理应使用子串切片 `str[pos..pos+1]`
+- Option 类型的 `@Expect(result == None)` 对泛型类型可能编译失败，应使用 `match` 模式匹配测试
+
+**Agent 调度策略优化**：
+- 新增 `detectExampleProjectId()` 函数，从用户提示词中推测最合适的示例项目
+- 中文关键词映射：「待办」→ todo_list、「计算器/表达式」→ calculator
+- 英文关键词映射：todo → todo_list、calc → calculator
+- 默认 fallback 为 json_parser（最通用的示例）
+
+### 7.4 Service 变更
+
+- `templates.cj` — `listExampleProjects()` 扩展为 3 个示例项目
+- `templates.cj` — 新增 `bootstrapExampleProject()` 通用引导函数，`bootstrapJsonParserProject()` 委托给它
+- `project.cj` — 新增 `handleBootstrapExample()` MCP 工具处理函数
+- `registry.cj` — 注册 `project.bootstrap` 工具（27 个工具总计）
+- `protocol.cj` — 新增 `project.bootstrap` 工具定义（含 `project_id` 和 `path` 参数）
+- `main.cj` — 新增 `bootstrap` CLI 子命令，支持 `cangjiecoder bootstrap <id> <path>`
+- `executor.cj` — `isMutatingTool()` 和 `appendValidationSteps()` 识别 `project.bootstrap`
+
+### 7.5 Agent 变更
+
+- `planning.cj` — `isNewProjectRequest()` 扩展匹配 todo/calculator 等关键词
+- `planning.cj` — 新增 `detectExampleProjectId()` 自动推测项目类型
+- `planning.cj` — fallback plan 使用 `project.bootstrap` 替代硬编码的 `project.bootstrap_json_parser`
+- `prompts.cj` — 更新 LLM 提示词规则，引导使用 `project.bootstrap`
+
+### 7.6 测试
+
+- `projects_test.cj` — 新增 5 个测试：列出 3 个项目、未知项目返回 None、todo/calculator 引导、拒绝未知项目
+- `agent_test.cj` — 新增 3 个测试：检测 todo/calculator/默认项目类型
+- `code_quality_test.cj` — 工具定义计数更新为 27
+- 总计 227 个测试全部通过

@@ -107,8 +107,9 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 
 | 工具名 | 说明 |
 |--------|------|
-| `project.list_examples` | 列出可引导的示例项目 |
+| `project.list_examples` | 列出可引导的示例项目（json_parser, todo_list, calculator） |
 | `project.bootstrap_json_parser` | 将 JsonParser 示例复制到工作区 |
+| `project.bootstrap` | 按项目 id 引导任意内置示例到工作区 |
 
 > `service` 不再直接承载 AI Provider / 会话记忆能力；这些逻辑已经全部迁移到 `agent/`，因此 `service` 可以作为更纯粹的仓颉 MCP 工具服务独立复用。
 
