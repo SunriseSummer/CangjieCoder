@@ -1,0 +1,156 @@
+// TaskManager 单元测试
+package taskmanager
+
+import std.unittest.*
+import std.unittest.testmacro.*
+import std.collection.*
+
+@Test
+class TaskManagerTest {
+    // 测试任务创建
+    @TestCase
+    func testCreateTask() {
+        let task = Task("测试任务")
+        @Assert(task.title == "测试任务")
+        @Assert(task.status == TaskStatus.Pending)  // 需要枚举支持 == 比较
+        @Assert(task.priority == Priority.Medium)    // 默认优先级
+    }
+
+    // 测试高优先级任务
+    @TestCase
+    func testHighPriority() {
+        let task = Task("紧急任务", priority: Priority.Critical)
+        @Assert(task.priority == Priority.Critical)
+        @Assert(task.priority.label() == "紧急")
+    }
+
+    // 测试任务完成
+    @TestCase
+    func testCompleteTask() {
+        let task = Task("编写代码")
+        task.complete()
+        @Assert(task.status == TaskStatus.Done)
+        @Assert(task.status.isTerminal())
+    }
+
+    // 测试任务取消
+    @TestCase
+    func testCancelTask() {
+        let task = Task("过期任务")
+        task.cancel()
+        @Assert(task.status == TaskStatus.Cancelled)
+        @Assert(task.status.isTerminal())
+    }
+
+    // 测试标签管理
+    @TestCase
+    func testTags() {
+        let task = Task("带标签任务")
+        task.addTag("前端")
+        task.addTag("紧急")
+        task.addTag("前端")  // 重复添加，应被忽略
+        @Assert(task.tags.size == 2)
+    }
+
+    // 测试任务摘要
+    @TestCase
+    func testSummary() {
+        let task = Task("设计架构", priority: Priority.High)
+        let s = task.summary()
+        @Assert(s.contains("设计架构"))
+        @Assert(s.contains("高"))
+        @Assert(s.contains("待处理"))
+    }
+
+    // 测试存储器添加和查找
+    @TestCase
+    func testStoreFindByTitle() {
+        let store = TaskStore()
+        store.add(Task("任务A"))
+        store.add(Task("任务B"))
+        match (store.findByTitle("任务A")) {
+            case Some(t) => @Assert(t.title == "任务A")
+            case None => @Assert(false)
+        }
+        match (store.findByTitle("不存在")) {
+            case Some(_) => @Assert(false)
+            case None => @Assert(true)
+        }
+    }
+
+    // 测试搜索功能
+    @TestCase
+    func testStoreSearch() {
+        let store = TaskStore()
+        store.add(Task("系统设计"))
+        store.add(Task("系统测试"))
+        store.add(Task("文档编写"))
+        let hits = store.search("系统")
+        @Assert(hits.size == 2)
+    }
+
+    // 测试完成任务
+    @TestCase
+    func testStoreComplete() {
+        let store = TaskStore()
+        store.add(Task("待办事项"))
+        @Assert(store.complete("待办事项"))
+        @Assert(!store.complete("待办事项"))  // 已终结，不能再次完成
+        @Assert(!store.complete("不存在"))     // 不存在的任务
+    }
+
+    // 测试统计信息
+    @TestCase
+    func testStatistics() {
+        let store = TaskStore()
+        store.add(Task("任务1", priority: Priority.High))
+        store.add(Task("任务2", priority: Priority.Low))
+        store.add(Task("任务3", priority: Priority.Critical))
+        store.complete("任务1")
+        let stats = store.statistics()
+        @Assert(stats.total == 3)
+        @Assert(stats.done == 1)
+        @Assert(stats.pending == 2)
+        @Assert(stats.highPriority == 2)  // High + Critical
+    }
+
+    // 测试任务数量
+    @TestCase
+    func testCount() {
+        let store = TaskStore()
+        @Assert(store.count == 0)
+        store.add(Task("A"))
+        store.add(Task("B"))
+        @Assert(store.count == 2)
+    }
+
+    // 测试列出全部任务
+    @TestCase
+    func testListAll() {
+        let store = TaskStore()
+        store.add(Task("任务甲"))
+        store.add(Task("任务乙"))
+        let list = store.listAll()
+        @Assert(list.contains("1."))
+        @Assert(list.contains("2."))
+        @Assert(list.contains("任务甲"))
+        @Assert(list.contains("任务乙"))
+    }
+
+    // 测试优先级比较
+    @TestCase
+    func testPriorityComparison() {
+        @Assert(Priority.High >= Priority.Medium)
+        @Assert(Priority.Critical >= Priority.Low)
+        @Assert(Priority.Low >= Priority.Low)
+    }
+
+    // 测试状态终结性
+    @TestCase
+    func testStatusTerminal() {
+        @Assert(TaskStatus.Done.isTerminal())
+        @Assert(TaskStatus.Cancelled.isTerminal())
+        @Assert(!TaskStatus.Pending.isTerminal())
+        @Assert(!TaskStatus.InProgress.isTerminal())
+    }
+}

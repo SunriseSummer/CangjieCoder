@@ -1,0 +1,6 @@
+[package]
+name = "taskmanager"
+version = "0.1.0"
+cjc-version = "1.0.5"
+output-type = "executable"
+description = "一个简单的任务管理器，支持任务的增删改查、优先级排序和统计"
