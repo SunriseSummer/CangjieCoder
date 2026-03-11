@@ -621,64 +621,65 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 - `service/README.md` — 更新工具列表表格，新增 4 个工具条目
 - `record.md` — 新增第六章记录本次变更
 
-## 七、示例项目体系与通用引导工具
+## 七、移除内置模板体系，增强 Agent 开发策略
 
 ### 7.1 问题与动机
 
-原有系统仅包含一个极简的 JsonParser 示例（只检测 JSON 值类型，不实际解析），且引导方式硬编码为单个 `project.bootstrap_json_parser` 工具，无法扩展到新的示例项目。
-Agent 的 fallback plan 也固定使用 `project.bootstrap_json_parser`，无法根据用户意图自动选择合适的示例模板。
+通过实际开发多个仓颉项目（JsonParser、TodoList、Calculator），发现内置模板引导方式并非必要——仓颉官方的 `cjpm init` 命令已经足以初始化新项目。内置模板增加了代码维护负担，且 Agent 不应依赖预制模板，而应具备基于 `cjpm init` + 技能文档自主创建任意项目的能力。
 
-### 7.2 示例项目增强
+### 7.2 删除清单
 
-通过实际开发三个完整的仓颉项目，总结最佳实践：
+**Service 层**：
+- 删除 `service/src/projects/` 子包（`templates.cj`）
+- 删除 `service/src/tools/project.cj`（工具处理函数）
+- 删除 3 个 MCP 工具定义：`project.list_examples`、`project.bootstrap_json_parser`、`project.bootstrap`
+- 删除 CLI 子命令：`examples`、`bootstrap-json-parser`、`bootstrap`
+- 删除 `exampleProjectsJson()` 序列化函数
+- 工具总数：26 → 24（后续若有需要，可通过 `cjpm init` 替代）
+- `ensurePlannedWorkspacePath()` 迁移至 `cangjiecoder.common`（仍被 `workspace.create_file` 使用）
 
-1. **JsonParser**（`tests/json_parser/`）
-   - 完整的递归下降 JSON 解析器，支持 null/bool/number/string/array/object 全部类型
-   - 演示：递归 enum（JNull/JBool/JNumber/JString/JArray/JObject）、ArrayList、模式匹配、字符串处理、异常处理
-   - 支持转义字符、科学计数法、嵌套结构、字段访问
+**Agent 层**：
+- 从 `AgentPlanningContext` 中移除 `exampleProjectsJson` 字段
+- 从 `runner.cj` 中移除 `project.list_examples` 调用
+- 从 `executor.cj` 中移除 `project.bootstrap*` 的 mutating tool 判定
+- 删除 `extractTargetPathFromPrompt()`、`detectExampleProjectId()` 等辅助函数
 
-2. **TodoList**（`tests/todo_list/`）
-   - 待办事项管理器 CLI 应用
-   - 演示：struct、enum（Priority/TaskStatus）、ArrayList、过滤/排序、格式化输出
+**模板文件**：
+- 删除 `tests/json_parser/`、`tests/todo_list/`、`tests/calculator/`
 
-3. **Calculator**（`tests/calculator/`）
-   - 表达式计算器，支持四则运算和括号
-   - 演示：递归 enum AST（Num/Add/Sub/Mul/Div）、递归下降解析、词法分析、运算符优先级
+**Python 集成测试**：
+- 删除 `tests/test_project.py`（测试已移除的模板工具）
+- 从 `tests/run_all.py` 中移除 `test_project` 模块
 
-### 7.3 开发经验总结
+### 7.3 开发经验注入
 
-**仓颉语言关键注意事项**：
-- `Bool` 是关键字，不能直接用作 enum 变体名，需要用 `JBool` 等前缀
+将开发多个仓颉项目过程中总结的经验和最佳实践注入 Agent 提示词和规划策略中：
+
+**仓颉语言关键注意事项**（注入 `prompts.cj` 提示词）：
+- `Bool` 是关键字，不能用作 enum 变体名，需用 `JBool` 等前缀
 - `Float64.parse()` 需要 `import std.convert.*`
-- `for (ch in str)` 迭代的是 `UInt8` 字节而非 `Rune` 字符，字符串处理应使用子串切片 `str[pos..pos+1]`
-- Option 类型的 `@Expect(result == None)` 对泛型类型可能编译失败，应使用 `match` 模式匹配测试
+- `for (ch in str)` 迭代 `UInt8` 字节而非 `Rune` 字符，应使用子串切片
+- 优先使用 `Option<T>` + `if-let` 而非 `try-catch` 处理可恢复错误
+- 代码变更后立即运行 `workspace.run_build` 捕获编译错误
+- 编写代码前先用 `skills.search` 查阅语言特性文档
+- 分析代码时先用 `cangjie.ast_summary` 获取概览，再用 `cangjie.ast_query_nodes` 定位具体节点
 
-**Agent 调度策略优化**：
-- 新增 `detectExampleProjectId()` 函数，从用户提示词中推测最合适的示例项目
-- 中文关键词映射：「待办」→ todo_list、「计算器/表达式」→ calculator
-- 英文关键词映射：todo → todo_list、calc → calculator
-- 默认 fallback 为 json_parser（最通用的示例）
+**Agent 规划策略增强**（注入 `planning.cj`）：
+- 新建项目：检测到「新项目/新建/init」关键词时，使用 `workspace.run_command` 调用 `cjpm init`
+- 特性查询：检测到语言特性关键词（JSON/HTTP/enum/class/泛型/接口等）时，优先调用 `skills.search`
+- 提示词中不再引导模型使用 `project.bootstrap`，改为引导使用 `cjpm init`
 
-### 7.4 Service 变更
+### 7.4 新增测试
 
-- `templates.cj` — `listExampleProjects()` 扩展为 3 个示例项目
-- `templates.cj` — 新增 `bootstrapExampleProject()` 通用引导函数，`bootstrapJsonParserProject()` 委托给它
-- `project.cj` — 新增 `handleBootstrapExample()` MCP 工具处理函数
-- `registry.cj` — 注册 `project.bootstrap` 工具（27 个工具总计）
-- `protocol.cj` — 新增 `project.bootstrap` 工具定义（含 `project_id` 和 `path` 参数）
-- `main.cj` — 新增 `bootstrap` CLI 子命令，支持 `cangjiecoder bootstrap <id> <path>`
-- `executor.cj` — `isMutatingTool()` 和 `appendValidationSteps()` 识别 `project.bootstrap`
+**Cangjie 单元测试**（`agent_test.cj`）：
+- `fallbackPlanUsesRunCommandForNewProject` — 验证新建项目使用 `workspace.run_command`
+- `fallbackPlanSearchesSkillsForFeatureQuestions` — 验证特性问题优先搜索技能文档
+- `fallbackPlanInspectsCjpmTomlWhenPresent` — 验证工作区含 `cjpm.toml` 时自动读取
+- `appendValidationStepsTreatsEditAstNodeAsMutation` — 验证 AST 编辑触发自动验证
 
-### 7.5 Agent 变更
+**Python 集成测试**：
+- `test_tools_inventory.py` — 29 个测试用例：验证 24 个工具全部存在、3 个已删除工具不存在、所有工具有描述
+- `test_workspace_commands.py` — 新增 `run_command_cjpm_allowed` 验证 `cjpm` 在白名单中
+- `test_skills_enhanced.py` — 工具总数断言更新为 24
 
-- `planning.cj` — `isNewProjectRequest()` 扩展匹配 todo/calculator 等关键词
-- `planning.cj` — 新增 `detectExampleProjectId()` 自动推测项目类型
-- `planning.cj` — fallback plan 使用 `project.bootstrap` 替代硬编码的 `project.bootstrap_json_parser`
-- `prompts.cj` — 更新 LLM 提示词规则，引导使用 `project.bootstrap`
-
-### 7.6 测试
-
-- `projects_test.cj` — 新增 5 个测试：列出 3 个项目、未知项目返回 None、todo/calculator 引导、拒绝未知项目
-- `agent_test.cj` — 新增 3 个测试：检测 todo/calculator/默认项目类型
-- `code_quality_test.cj` — 工具定义计数更新为 27
-- 总计 227 个测试全部通过
+**测试汇总**：217 个 Cangjie 测试 + 141 个 Python 集成测试全部通过
