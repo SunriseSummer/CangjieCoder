@@ -130,7 +130,7 @@ public func tokenizeQuery(normalized: String): Array<String> {
     for (seg in splitSegments) {
         tokens.add(seg)
         let runes = seg.toRuneArray()
-        if (runes.size > 2 && isChineseRune(runes[0])) {
+        if (runes.size > 2 && isNonAsciiAlphaNum(runes[0])) {
             // 仅对中文片段生成 bigram，避免英文产生无意义的双字母组合
             for (i in 0..runes.size - 1) {
                 let bigram = "${runes[i]}${runes[i + 1]}"
@@ -174,8 +174,8 @@ func isAsciiAlphaNum(ch: Rune): Bool {
     return (ch >= r'a' && ch <= r'z') || (ch >= r'A' && ch <= r'Z') || (ch >= r'0' && ch <= r'9')
 }
 
-// 判断一个 Rune 是否为中文字符（CJK Unified Ideographs 基本区域）
-func isChineseRune(ch: Rune): Bool {
+// 判断一个 Rune 是否为非 ASCII 字母数字字符（如中文、日文等）
+func isNonAsciiAlphaNum(ch: Rune): Bool {
     return !isAsciiAlphaNum(ch)
 }
 
