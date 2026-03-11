@@ -869,4 +869,19 @@ skills analysis lsp workspace   ← 各领域包（含工具处理函数）
     └──── cangjiecoder.mcp ────┘  ← MCP 协议 + 注册表（汇聚所有处理函数）
 ```
 
-**测试汇总**：235 个测试全部通过
+**测试汇总**：235 个 Cangjie 测试全部通过
+
+#### 8.8 Python 测试同步更新
+
+同步更新 `tests/` 下的 Python MCP 集成测试：
+
+- 更新工具清单计数：24 → 26（新增 `workspace.set_root` 和 `workspace.get_root`）
+- `test_tools_inventory.py` — 新增 `has_workspace_set_root` 和 `has_workspace_get_root` 检查
+- `test_skills_enhanced.py` — 更新 `tools_total_count` 期望值
+- 新增 `test_workspace_root.py` — 8 个测试用例：
+  - `get_root_returns_workspace` / `get_root_default_nonempty` — 查询默认工作区
+  - `set_root_valid_dir` / `set_root_returns_path` / `get_root_after_set` — 设置有效目录并验证
+  - `set_root_empty_fails` / `set_root_relative_fails` / `set_root_nonexistent_fails` — 输入验证
+- `run_all.py` — 注册 Workspace Root 测试模块
+
+**测试汇总**：235 个 Cangjie 测试 + 151 个 Python 测试全部通过
