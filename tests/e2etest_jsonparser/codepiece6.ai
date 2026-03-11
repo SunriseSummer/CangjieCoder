@@ -1,193 +1,157 @@
-// JsonParser 单元测试
+// JSON 递归下降解析器
 package jsonparser
 
-import std.unittest.*
-import std.unittest.testmacro.*
 import std.collection.*
+import std.convert.*
 
-@Test
-class JsonParserTest {
-    @TestCase
-    func parseNull() {
-        let r = parseJson("null")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().kind == JsonValueKind.JNull)
+// 解析结果
+public class ParseResult {
+    public let ok: Bool
+    public let value: ?JsonValue
+    public let error: String
+
+    init(ok: Bool, value: ?JsonValue, error: String) {
+        this.ok = ok
+        this.value = value
+        this.error = error
     }
 
-    @TestCase
-    func parseTrue() {
-        let r = parseJson("true")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().boolValue() == true)
+    public static func success(v: JsonValue): ParseResult {
+        ParseResult(true, v, "")
     }
 
-    @TestCase
-    func parseFalse() {
-        let r = parseJson("false")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().boolValue() == false)
+    public static func failure(msg: String): ParseResult {
+        ParseResult(false, None, msg)
+    }
+}
+
+// 递归下降 JSON 解析器
+public class JsonParser {
+    var lexer: JsonLexer
+    var current: Token
+
+    public init(input: String) {
+        lexer = JsonLexer(input)
+        current = lexer.nextToken()
     }
 
-    @TestCase
-    func parseInteger() {
-        let r = parseJson("42")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().numberValue() == 42.0)
+    func advance() {
+        current = lexer.nextToken()
     }
 
-    @TestCase
-    func parseNegativeNumber() {
-        let r = parseJson("-7")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().numberValue() == -7.0)
-    }
-
-    @TestCase
-    func parseFloat() {
-        let r = parseJson("3.14")
-        @Assert(r.ok)
-        let n = r.value.getOrThrow().numberValue()
-        @Assert(n > 3.13 && n < 3.15)
-    }
-
-    @TestCase
-    func parseScientific() {
-        let r = parseJson("1e3")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().numberValue() == 1000.0)
-    }
-
-    @TestCase
-    func parseString() {
-        let r = parseJson(#""hello""#)
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().stringValue() == "hello")
-    }
-
-    @TestCase
-    func parseStringWithEscapes() {
-        let r = parseJson(#""line1\nline2""#)
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().stringValue() == "line1\nline2")
-    }
-
-    @TestCase
-    func parseEmptyArray() {
-        let r = parseJson("[]")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().arrayItems().size == 0)
-    }
-
-    @TestCase
-    func parseArray() {
-        let r = parseJson("[1, 2, 3]")
-        @Assert(r.ok)
-        let items = r.value.getOrThrow().arrayItems()
-        @Assert(items.size == 3)
-        @Assert(items[0].numberValue() == 1.0)
-        @Assert(items[2].numberValue() == 3.0)
-    }
-
-    @TestCase
-    func parseMixedArray() {
-        let r = parseJson(#"[1, "two", true, null]"#)
-        @Assert(r.ok)
-        let items = r.value.getOrThrow().arrayItems()
-        @Assert(items.size == 4)
-        @Assert(items[0].kind == JsonValueKind.JNumber)
-        @Assert(items[1].kind == JsonValueKind.JString)
-        @Assert(items[2].kind == JsonValueKind.JBool)
-        @Assert(items[3].kind == JsonValueKind.JNull)
-    }
-
-    @TestCase
-    func parseEmptyObject() {
-        let r = parseJson("{}")
-        @Assert(r.ok)
-        @Assert(r.value.getOrThrow().objectKeys().size == 0)
-    }
-
-    @TestCase
-    func parseObject() {
-        let r = parseJson(#"{"a": 1, "b": "hello"}"#)
-        @Assert(r.ok)
-        let v = r.value.getOrThrow()
-        @Assert(v.objectKeys().size == 2)
-        match (v.get("a")) {
-            case Some(a) => @Assert(a.numberValue() == 1.0)
-            case None => @Assert(false)
+    func expect(kind: TokenKind): Bool {
+        if (current.kind == kind) {
+            advance()
+            return true
         }
-        match (v.get("b")) {
-            case Some(b) => @Assert(b.stringValue() == "hello")
-            case None => @Assert(false)
+        return false
+    }
+
+    // 解析入口
+    public func parse(): ParseResult {
+        let result = parseValue()
+        if (!result.ok) {
+            return result
+        }
+        if (current.kind != TokenKind.TEof) {
+            return ParseResult.failure("Unexpected content after JSON value")
+        }
+        return result
+    }
+
+    func parseValue(): ParseResult {
+        match (current.kind) {
+            case TNull =>
+                advance()
+                return ParseResult.success(JsonValue.ofNull())
+            case TTrue =>
+                advance()
+                return ParseResult.success(JsonValue.ofBool(true))
+            case TFalse =>
+                advance()
+                return ParseResult.success(JsonValue.ofBool(false))
+            case TNumber =>
+                let numStr = current.value
+                advance()
+                let num = Float64.parse(numStr)
+                return ParseResult.success(JsonValue.ofNumber(num))
+            case TString =>
+                let s = current.value
+                advance()
+                return ParseResult.success(JsonValue.ofString(s))
+            case LBracket => return parseArray()
+            case LBrace => return parseObject()
+            case TError =>
+                return ParseResult.failure(current.value)
+            case _ =>
+                return ParseResult.failure("Unexpected token: ${current.value}")
         }
     }
 
-    @TestCase
-    func parseNestedObject() {
-        let r = parseJson(#"{"outer": {"inner": [1, 2]}}"#)
-        @Assert(r.ok)
-        let outer = r.value.getOrThrow()
-        match (outer.get("outer")) {
-            case Some(innerObj) =>
-                match (innerObj.get("inner")) {
-                    case Some(arr) =>
-                        @Assert(arr.arrayItems().size == 2)
-                    case None => @Assert(false)
-                }
-            case None => @Assert(false)
+    func parseArray(): ParseResult {
+        advance() // skip [
+        let items = ArrayList<JsonValue>()
+        if (current.kind == TokenKind.RBracket) {
+            advance()
+            return ParseResult.success(JsonValue.ofArray(items))
         }
+        while (true) {
+            let elem = parseValue()
+            if (!elem.ok) { return elem }
+            match (elem.value) {
+                case Some(v) => items.add(v)
+                case None => return ParseResult.failure("Internal error: missing value")
+            }
+            if (current.kind == TokenKind.Comma) {
+                advance()
+            } else if (current.kind == TokenKind.RBracket) {
+                advance()
+                return ParseResult.success(JsonValue.ofArray(items))
+            } else {
+                return ParseResult.failure("Expected ',' or ']' in array")
+            }
+        }
+        return ParseResult.failure("Unexpected end of array")
     }
 
-    @TestCase
-    func parseWhitespace() {
-        let r = parseJson(#"  {  "a"  :  1  }  "#)
-        @Assert(r.ok)
+    func parseObject(): ParseResult {
+        advance() // skip {
+        let keys = ArrayList<String>()
+        let vals = ArrayList<JsonValue>()
+        if (current.kind == TokenKind.RBrace) {
+            advance()
+            return ParseResult.success(JsonValue.ofObject(keys, vals))
+        }
+        while (true) {
+            if (current.kind != TokenKind.TString) {
+                return ParseResult.failure("Expected string key in object")
+            }
+            let key = current.value
+            advance()
+            if (!expect(TokenKind.Colon)) {
+                return ParseResult.failure("Expected ':' after key")
+            }
+            let val = parseValue()
+            if (!val.ok) { return val }
+            keys.add(key)
+            match (val.value) {
+                case Some(v) => vals.add(v)
+                case None => return ParseResult.failure("Internal error: missing value")
+            }
+            if (current.kind == TokenKind.Comma) {
+                advance()
+            } else if (current.kind == TokenKind.RBrace) {
+                advance()
+                return ParseResult.success(JsonValue.ofObject(keys, vals))
+            } else {
+                return ParseResult.failure("Expected ',' or '}' in object")
+            }
+        }
+        return ParseResult.failure("Unexpected end of object")
     }
+}
 
-    @TestCase
-    func parseErrorUnexpected() {
-        let r = parseJson("invalid")
-        @Assert(!r.ok)
-    }
-
-    @TestCase
-    func parseErrorTrailing() {
-        let r = parseJson("123 456")
-        @Assert(!r.ok)
-    }
-
-    @TestCase
-    func parseErrorUnclosedArray() {
-        let r = parseJson("[1, 2")
-        @Assert(!r.ok)
-    }
-
-    @TestCase
-    func parseErrorUnclosedObject() {
-        let r = parseJson(#"{"a": 1"#)
-        @Assert(!r.ok)
-    }
-
-    @TestCase
-    func displayNull() {
-        @Assert(parseJson("null").value.getOrThrow().display() == "null")
-    }
-
-    @TestCase
-    func displayBool() {
-        @Assert(parseJson("true").value.getOrThrow().display() == "true")
-        @Assert(parseJson("false").value.getOrThrow().display() == "false")
-    }
-
-    @TestCase
-    func displayNumber() {
-        @Assert(parseJson("42").value.getOrThrow().display() == "42")
-    }
-
-    @TestCase
-    func displayArray() {
-        let d = parseJson("[1, 2]").value.getOrThrow().display()
-        @Assert(d == "[1, 2]")
-    }
+// 便捷入口函数
+public func parseJson(input: String): ParseResult {
+    JsonParser(input).parse()
 }

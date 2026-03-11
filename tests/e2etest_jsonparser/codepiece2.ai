@@ -5,7 +5,6 @@ import std.collection.*
 import std.deriving.*
 
 // JSON 值类型枚举
-@Derive[Equatable]
 public enum JsonValueKind {
     | JNull
     | JBool
