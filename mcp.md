@@ -54,8 +54,14 @@
 **架构要点**：
 - MCP 协议层在 `service/src/mcp/protocol.cj` 中定义工具元数据（名称、参数、描述）
 - MCP 运行时在 `service/src/mcp/handlers.cj` 中实现请求分发和工具调度
-- 工作区管理在 `service/src/workspace/` 包中实现（helpers/root_manager/files/commands）
-- 工具处理函数按类别分布：`tools/`（技能、AST、LSP）和 `workspace/`（文件、命令、根目录管理）
+- MCP 工具注册表在 `service/src/mcp/registry.cj` 中将工具名映射到处理函数
+- 各工具处理函数按领域分布在各自的包中：
+  - `skills/handlers.cj` — 技能搜索工具（skills.search、batch_search、prompt_context）
+  - `analysis/handlers.cj` — AST 解析/查询/编辑和代码分析工具
+  - `lsp/handlers.cj` — LSP 查询工具（lsp_status、probe、symbols、definition）
+  - `workspace/files.cj` — 文件操作工具（read/list/search/replace/create/rollback）
+  - `workspace/commands.cj` — 命令执行工具（run_build/run_test/run_command）
+  - `workspace/root_manager.cj` — 工作区根目录管理（set_root/get_root）
 - 共享类型 `McpToolContext` 和 `McpToolHandler` 在 `service/src/common/types.cj` 中定义
 - 工作区路径支持多级动态设置：`initialize` roots 自动检测、`workspace.set_root` 会话级切换、`workspacePath` 参数单次覆盖
 - 所有涉及路径的工具通过 `ensureWorkspacePath()` 验证路径不会逃逸出仓库根目录

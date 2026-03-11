@@ -821,3 +821,52 @@ cangjiecoder.workspace    cangjiecoder.tools
     ↑                         ↑
     └─────── cangjiecoder.mcp ┘
 ```
+
+#### 8.7 删除 tools 目录，工具处理函数回归领域包
+
+按检视意见彻底删除 `service/src/tools/` 目录，各工具处理函数移入其所属的领域包，MCP 工具注册表移入 `mcp/` 目录。
+
+**变更明细**：
+
+| 原文件 | 目标文件 | 说明 |
+|--------|----------|------|
+| `tools/skills.cj` | `skills/handlers.cj` | 技能搜索工具处理函数（search/batch_search/prompt_context） |
+| `tools/ast.cj` | `analysis/handlers.cj` | AST 解析/查询/编辑和代码分析工具处理函数 |
+| `tools/lsp.cj` + `tools/types.cj` | `lsp/handlers.cj` | LSP 查询工具处理函数（status/probe/symbols/definition）和 lspQueryToolResult |
+| `tools/registry.cj` | `mcp/registry.cj` | MCP 工具注册表（buildMcpToolRegistry），与 protocol.cj 和 handlers.cj 同包 |
+| `json/serializers.cj` | 各领域包 | 领域 JSON 序列化函数移入各自的包（消除 json↔领域包循环依赖） |
+
+**领域 JSON 序列化迁移**：
+- `skillsJson()` → `skills/handlers.cj` 中的 `skillsResultToJson()`
+- `analysisJson()` → `analysis/handlers.cj` 中的 `analysisResultToJson()`
+- `lspStatusJson()` / `lspProbeJson()` / `lspQueryJson()` → `lsp/handlers.cj` 中的 `lspStatusToJson()` / `lspProbeToJson()` / `lspQueryToJson()`
+
+**新增辅助函数**：
+- `analysis/analyzer.cj` 新增 `analysisWorkspaceRelativePath()`（子包内部工作区相对路径计算）
+
+**删除文件**：
+- `service/src/tools/`（整个目录）
+- `service/src/json/serializers.cj`（内容已分散到各领域包）
+
+**最终目录结构**（每个目录职责明确）：
+```
+service/src/
+├── analysis/    → 代码分析 + AST/分析工具处理函数
+├── common/      → 共享类型与工具函数
+├── json/        → JSON 解析与通用序列化工具
+├── lsp/         → LSP 协议/会话/查询 + LSP 工具处理函数
+├── mcp/         → MCP 协议 + 运行时 + 工具注册表
+├── skills/      → 技能注册表 + 技能搜索工具处理函数
+└── workspace/   → 工作区管理 + 文件/命令工具处理函数
+```
+
+**依赖关系**（无循环）：
+```
+cangjiecoder.common  ← 共享类型（McpToolContext, McpToolHandler, AppConfig）
+    ↑    ↑    ↑    ↑
+skills analysis lsp workspace   ← 各领域包（含工具处理函数）
+    ↑      ↑     ↑     ↑
+    └──── cangjiecoder.mcp ────┘  ← MCP 协议 + 注册表（汇聚所有处理函数）
+```
+
+**测试汇总**：235 个测试全部通过
