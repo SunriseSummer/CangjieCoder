@@ -6,6 +6,8 @@ import std.collection.*
 public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     let registry = HashMap<String, McpToolHandler>()
     registry["skills.search"] = handleSkillsSearch
+    registry["skills.batch_search"] = handleSkillsBatchSearch
+    registry["skills.prompt_context"] = handleSkillsPromptContext
     registry["workspace.read_file"] = handleReadFile
     registry["workspace.list_files"] = handleListFiles
     registry["workspace.search_text"] = handleSearchText
@@ -27,5 +29,7 @@ public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["cangjie.ast_parse"] = handleAstParse
     registry["cangjie.ast_query_nodes"] = handleAstQueryNodes
     registry["cangjie.ast_list_nodes"] = handleAstListNodes
+    registry["cangjie.ast_summary"] = handleAstSummary
+    registry["cangjie.ast_query_nodes_with_text"] = handleAstQueryNodesWithText
     return registry
 }

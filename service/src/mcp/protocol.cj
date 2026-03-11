@@ -1,5 +1,5 @@
 // MCP 协议层：工具定义、参数规格、JSON 序列化、帧编解码
-// 定义 22 个 MCP 工具的元数据（名称、描述、参数规格），
+// 定义 27 个 MCP 工具的元数据（名称、描述、参数规格），
 // 以及 JSON-RPC 2.0 响应构造和 MCP stdio 帧编解码能力。
 package cangjiecoder.mcp
 
@@ -35,7 +35,7 @@ public struct ToolDefinition {
 
 // ── 工具注册表构建 ───────────────────────────────────
 
-// 构建全部 22 个 MCP 工具的元数据定义，分为以下类别：
+// 构建全部 27 个 MCP 工具的元数据定义，分为以下类别：
 // - 技能检索（skills）
 // - 工作区操作（workspace）
 // - 仓颉分析与 AST（cangjie）
@@ -126,6 +126,21 @@ public func buildToolDefinitions(): Array<ToolDefinition> {
     defs.add(ToolDefinition("cangjie.ast_list_nodes", "List all named AST nodes in a Cangjie source file up to a specified depth.", [
         ToolArgSpec("path", "string", "Cangjie source file path.", true),
         ToolArgSpec("maxDepth", "integer", "Maximum tree depth to traverse. Defaults to 4.", false)
+    ]))
+    defs.add(ToolDefinition("cangjie.ast_summary", "Generate a concise structural summary of a Cangjie source file listing top-level definitions (functions, classes, interfaces, structs, enums) with their signatures and line ranges. Ideal for quickly understanding file structure without reading the full source, significantly reducing Token consumption.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true)
+    ]))
+    defs.add(ToolDefinition("cangjie.ast_query_nodes_with_text", "Query AST nodes by type and return each node with its corresponding source text. Use this to inspect specific code elements (function bodies, class definitions) without reading the entire file.", [
+        ToolArgSpec("path", "string", "Cangjie source file path.", true),
+        ToolArgSpec("nodeType", "string", "Tree-sitter node type to search for (e.g. functionDefinition, classDefinition).", true)
+    ]))
+    // 批量技能检索
+    defs.add(ToolDefinition("skills.batch_search", "Search multiple skill queries in a single request, returning results for each query. Reduces network round-trips and Token consumption when multiple skills are needed.", [
+        ToolArgSpec("queries", "array", "Array of search query strings.", true)
+    ]))
+    defs.add(ToolDefinition("skills.prompt_context", "Generate a ready-to-use prompt context block from matching skills. Returns compact text that AI can embed directly in system prompts.", [
+        ToolArgSpec("query", "string", "Search keywords for skills lookup.", true),
+        ToolArgSpec("limit", "integer", "Maximum number of skills to include. Defaults to 3.", false)
     ]))
     return defs.toArray()
 }
