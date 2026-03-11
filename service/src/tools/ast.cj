@@ -78,3 +78,47 @@ public func handleAnalyzeFile(ctx: McpToolContext, args: JsonObject): String {
     let data = parseJsonObject(analysisJson(result))
     return toolResultJson(result.success, result.summary, data: data)
 }
+
+// 生成源文件的结构摘要（函数、类、接口等定义的签名与位置）
+// 帮助 AI 快速理解文件结构，大幅节省 Token 消耗
+public func handleAstSummary(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = readTextFile(fullPath)
+        let summaryText = astSummary(source)
+        let summaryEntries = JsonValue.fromStr(astSummaryJson(source))
+        let data = JsonObject()
+        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("summary", JsonString(summaryText))
+        data.put("entries", summaryEntries)
+        return toolResultJson(true, "AST summary completed", data: data)
+    }
+    return toolMessageJson(false, "AST summary failed", "Path does not exist or escapes repository root: ${path}")
+}
+
+// 查询指定类型的 AST 节点并返回每个节点对应的源码文本
+// 用于精确查看函数体、类定义等代码片段，而不需要读取整个文件
+public func handleAstQueryNodesWithText(ctx: McpToolContext, args: JsonObject): String {
+    let path = jsonField(args, "path")
+    let nodeType = jsonField(args, "nodeType")
+    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = readTextFile(fullPath)
+        let nodesWithText = queryNodesWithText(source, nodeType)
+        let nodesArray = JsonArray()
+        for ((node, text) in nodesWithText) {
+            let item = JsonObject()
+            item.put("type", JsonString(node.nodeType))
+            item.put("startRow", JsonInt(Int64(node.startRow)))
+            item.put("endRow", JsonInt(Int64(node.endRow)))
+            item.put("text", JsonString(text))
+            nodesArray.add(item)
+        }
+        let data = JsonObject()
+        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("nodeType", JsonString(nodeType))
+        data.put("matchCount", JsonInt(nodesWithText.size))
+        data.put("nodes", nodesArray)
+        return toolResultJson(true, "Found ${nodesWithText.size} node(s) of type ${nodeType} with text", data: data)
+    }
+    return toolMessageJson(false, "AST query failed", "Path does not exist or escapes repository root: ${path}")
+}

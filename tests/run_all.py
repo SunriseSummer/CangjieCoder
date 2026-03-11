@@ -24,18 +24,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp_client import McpClient  # noqa: E402
 import test_skills  # noqa: E402
+import test_skills_enhanced  # noqa: E402
 import test_workspace_files  # noqa: E402
 import test_workspace_edit  # noqa: E402
 import test_workspace_commands  # noqa: E402
 import test_ast  # noqa: E402
+import test_ast_enhanced  # noqa: E402
 import test_lsp  # noqa: E402
 import test_project  # noqa: E402
 
 TEST_MODULES = [
     ("Skills Search", test_skills),
+    ("Skills Enhanced", test_skills_enhanced),
     ("Workspace Files", test_workspace_files),
     ("Workspace Commands", test_workspace_commands),
     ("AST Analysis", test_ast),
+    ("AST Enhanced", test_ast_enhanced),
     ("LSP Integration", test_lsp),
     ("Project Templates", test_project),
     ("Workspace Edit & Rollback", test_workspace_edit),

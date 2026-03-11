@@ -571,3 +571,52 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 | `service/src/tools/ast.cj` | AST 工具全部 if-let 兜底 |
 | `service/src/code_quality_test.cj` | 适配 Option 返回值，新增越界测试 |
 | `service/src/ast_edit_test.cj` | 适配 `offsetForPoint` 的 `?Int64` 返回 |
+
+## 六、AST 与 Skills 服务增强
+
+### 6.1 新增 tree-sitter 高层 API
+
+**目标**：提供更高效的 AST 查询能力，让 AI 能精确提取代码片段而无需读取全文，大幅节省 Token。
+
+**新增 API**：
+- `extractNodeText(source, node)` — 从源码中按字节范围提取 AST 节点对应的原文
+- `queryNodesWithText(source, nodeType)` — 查询匹配节点并同时返回源码文本
+- `countNodes(source, nodeType)` — 轻量级节点计数，不提取完整信息
+- `astSummary(source)` — 生成文本格式的文件结构摘要（顶层定义签名与行范围）
+- `astSummaryJson(source)` — 生成 JSON 格式的结构化摘要条目
+
+**涉及文件**：`cangjie-tree-sitter/src/treesitter.cj`
+
+### 6.2 新增 MCP 工具（22 → 26）
+
+| 工具名 | 说明 |
+|--------|------|
+| `cangjie.ast_summary` | 生成源文件结构摘要，列出函数/类/接口/结构体/枚举的签名与行范围 |
+| `cangjie.ast_query_nodes_with_text` | 按节点类型查询并返回每个节点的源码文本 |
+| `skills.batch_search` | 批量搜索多个技能查询，一次请求返回多组结果 |
+| `skills.prompt_context` | 生成可直接嵌入 AI 提示词的技能上下文文本 |
+
+**涉及文件**：
+- `service/src/tools/ast.cj` — 新增 `handleAstSummary`、`handleAstQueryNodesWithText`
+- `service/src/tools/skills.cj` — 新增 `handleSkillsBatchSearch`、`handleSkillsPromptContext`
+- `service/src/tools/registry.cj` — 注册 4 个新工具
+- `service/src/mcp/protocol.cj` — 添加 4 个工具定义（含参数规格与描述）
+
+### 6.3 测试增强
+
+**单元测试**（Cangjie）：新增 47 个测试用例，总计 219 个
+- `TreeSitterEnhancedApiTest` — extractNodeText、queryNodesWithText、countNodes、astSummary/Json
+- `AstToolsEnhancedTest` — ast_summary/query_nodes_with_text MCP 集成
+- `SkillsToolsEnhancedTest` — batch_search/prompt_context MCP 集成、tools/list 验证
+- `PracticalScenarioTest` — AI 实战场景（文件概览、函数查看、批量查找、两步探索）
+- `SkillsRegistryEnhancedTest` — buildPromptContext、中英文混合查询、分词
+
+**集成测试**（Python）：新增 41 个测试用例，总计 115 个
+- `test_ast_enhanced.py` — 20 个测试：summary 格式验证、query_with_text 源码提取、summary+detail 组合工作流、工具列表验证
+- `test_skills_enhanced.py` — 21 个测试：batch_search 多语言查询、prompt_context 限制验证、batch+context 组合工作流、工具总数验证
+
+### 6.4 文档更新
+
+- `mcp.md` — 更新工具总览表（22 → 26）、目录、概述；新增 4 个工具的详细文档（功能、原理、参数、示例）
+- `service/README.md` — 更新工具列表表格，新增 4 个工具条目
+- `record.md` — 新增第六章记录本次变更

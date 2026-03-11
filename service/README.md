@@ -64,6 +64,8 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | 工具名 | 说明 |
 |--------|------|
 | `skills.search` | 搜索内置的仓颉技能语料 |
+| `skills.batch_search` | 批量搜索多个技能查询，减少往返次数 |
+| `skills.prompt_context` | 生成可直接嵌入 AI 提示词的技能上下文 |
 
 ### 工作区文件与命令
 
@@ -88,6 +90,8 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | `cangjie.ast_parse` | 内置 tree-sitter 解析，返回 S-expression AST |
 | `cangjie.ast_query_nodes` | 按节点类型查询 AST 节点及位置 |
 | `cangjie.ast_list_nodes` | 列出命名 AST 节点概览 |
+| `cangjie.ast_summary` | 生成源文件结构摘要（函数/类/接口签名与位置） |
+| `cangjie.ast_query_nodes_with_text` | 按类型查询节点并返回对应源码文本 |
 
 ### Cangjie LSP 集成
 
@@ -108,6 +112,6 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 
 > `service` 不再直接承载 AI Provider / 会话记忆能力；这些逻辑已经全部迁移到 `agent/`，因此 `service` 可以作为更纯粹的仓颉 MCP 工具服务独立复用。
 
-当前这批能力已经覆盖“读文件/搜文本/创建文件/精确替换/构建测试/符号发现/定义跳转/AST 定点编辑/内置 AST 解析”的自主开发闭环，适合通过 stdio MCP 接入到 OpenCode、Copilot 等宿主中使用。
+当前这批能力已经覆盖“读文件/搜文本/创建文件/精确替换/构建测试/符号发现/定义跳转/AST 定点编辑/内置 AST 解析/结构摘要/批量技能检索”的自主开发闭环，适合通过 stdio MCP 接入到 OpenCode、Copilot 等宿主中使用。
 
 更多工具详情和客户端接入示例见根目录 [`mcp.md`](../mcp.md)。

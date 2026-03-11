@@ -1,98 +1,8 @@
-// cangjie-tree-sitter：tree-sitter 引擎的仓颉封装
-// 默认集成 tree-sitter-cangjie 插件，也支持接入其他语言插件。
+// cangjie-tree-sitter：核心类型、解析与节点查询 API
+// FFI 绑定见 ffi.cj，结构摘要见 summary.cj，JSON 序列化见 json.cj
 package cjtreesitter
 
 import std.collection.*
-
-// ============================================================
-// tree-sitter C FFI 类型声明
-// ============================================================
-
-@C
-public struct TSPoint {
-    public var row: UInt32 = 0
-    public var column: UInt32 = 0
-}
-
-@C
-public struct TSNode {
-    public var context0: UInt32 = 0
-    public var context1: UInt32 = 0
-    public var context2: UInt32 = 0
-    public var context3: UInt32 = 0
-    public var id: CPointer<Unit> = CPointer<Unit>()
-    public var tree: CPointer<Unit> = CPointer<Unit>()
-}
-
-@C
-public struct TSTreeCursor {
-    public var tree: CPointer<Unit> = CPointer<Unit>()
-    public var id: CPointer<Unit> = CPointer<Unit>()
-    public var context0: UInt32 = 0
-    public var context1: UInt32 = 0
-    public var context2: UInt32 = 0
-}
-
-// ============================================================
-// tree-sitter C FFI 函数声明
-// ============================================================
-
-foreign {
-    func tree_sitter_cangjie(): CPointer<Unit>
-    func ts_parser_new(): CPointer<Unit>
-    func ts_parser_delete(parser: CPointer<Unit>): Unit
-    func ts_parser_set_language(parser: CPointer<Unit>, language: CPointer<Unit>): Bool
-    func ts_parser_parse_string(parser: CPointer<Unit>, oldTree: CPointer<Unit>,
-                                source: CPointer<UInt8>, length: UInt32): CPointer<Unit>
-    func ts_tree_delete(tree: CPointer<Unit>): Unit
-    func ts_tree_root_node(tree: CPointer<Unit>): TSNode
-    func ts_node_type(node: TSNode): CPointer<UInt8>
-    func ts_node_string(node: TSNode): CPointer<UInt8>
-    func ts_node_start_point(node: TSNode): TSPoint
-    func ts_node_end_point(node: TSNode): TSPoint
-    func ts_node_start_byte(node: TSNode): UInt32
-    func ts_node_end_byte(node: TSNode): UInt32
-    func ts_node_child_count(node: TSNode): UInt32
-    func ts_node_named_child_count(node: TSNode): UInt32
-    func ts_node_child(node: TSNode, index: UInt32): TSNode
-    func ts_node_named_child(node: TSNode, index: UInt32): TSNode
-    func ts_node_is_null(node: TSNode): Bool
-    func ts_node_is_named(node: TSNode): Bool
-    func ts_tree_cursor_new(node: TSNode): TSTreeCursor
-    func ts_tree_cursor_delete(cursor: CPointer<TSTreeCursor>): Unit
-    func ts_tree_cursor_current_node(cursor: CPointer<TSTreeCursor>): TSNode
-    func ts_tree_cursor_goto_first_child(cursor: CPointer<TSTreeCursor>): Bool
-    func ts_tree_cursor_goto_next_sibling(cursor: CPointer<TSTreeCursor>): Bool
-    func ts_tree_cursor_goto_parent(cursor: CPointer<TSTreeCursor>): Bool
-}
-
-foreign func free(ptr: CPointer<Unit>): Unit
-
-// ============================================================
-// 内部辅助
-// ============================================================
-
-// 将 C 字符串指针转换为仓颉 String
-unsafe func cStringToString(ptr: CPointer<UInt8>): String {
-    if (ptr.isNull()) {
-        return ""
-    }
-    var len: Int64 = 0
-    while (ptr.read(len) != 0) {
-        len += 1
-    }
-    let bytes = Array<Byte>(len, {i => ptr.read(i)})
-    return String.fromUtf8(bytes)
-}
-
-// ============================================================
-// 语言插件接口
-// ============================================================
-
-// 获取内置的 tree-sitter-cangjie 语言指针
-public func cangjieLanguage(): CPointer<Unit> {
-    return unsafe { tree_sitter_cangjie() }
-}
 
 // ============================================================
 // 节点信息结构
@@ -232,7 +142,7 @@ public func listNamedNodes(source: String, maxDepth!: Int64 = 4,
 }
 
 // ============================================================
-// 内部遍历辅助
+// 内部辅助：节点遍历
 // ============================================================
 
 // 递归遍历 AST 树，收集指定类型的节点
@@ -273,54 +183,3 @@ unsafe func collectNamedNodes(node: TSNode, depth: Int64, maxDepth: Int64,
     }
 }
 
-// ============================================================
-// JSON 序列化辅助
-// ============================================================
-
-// 将 NodeInfo 序列化为 JSON 字符串
-public func nodeInfoToJson(node: NodeInfo): String {
-    let sb = StringBuilder()
-    sb.append("{\"type\":\"")
-    sb.append(jsonEscape(node.nodeType))
-    sb.append("\",\"startRow\":")
-    sb.append(node.startRow.toString())
-    sb.append(",\"startColumn\":")
-    sb.append(node.startColumn.toString())
-    sb.append(",\"endRow\":")
-    sb.append(node.endRow.toString())
-    sb.append(",\"endColumn\":")
-    sb.append(node.endColumn.toString())
-    sb.append(",\"startByte\":")
-    sb.append(node.startByte.toString())
-    sb.append(",\"endByte\":")
-    sb.append(node.endByte.toString())
-    sb.append(",\"isNamed\":")
-    sb.append(node.isNamed.toString())
-    sb.append(",\"childCount\":")
-    sb.append(node.childCount.toString())
-    sb.append("}")
-    return sb.toString()
-}
-
-// 将 NodeInfo 数组序列化为 JSON 数组字符串
-public func nodeInfoArrayToJson(nodes: Array<NodeInfo>): String {
-    let sb = StringBuilder()
-    sb.append("[")
-    for (i in 0..nodes.size) {
-        if (i > 0) {
-            sb.append(",")
-        }
-        sb.append(nodeInfoToJson(nodes[i]))
-    }
-    sb.append("]")
-    return sb.toString()
-}
-
-// JSON 字符串转义
-func jsonEscape(s: String): String {
-    return s.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-}
