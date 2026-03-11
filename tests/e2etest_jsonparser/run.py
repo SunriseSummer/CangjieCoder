@@ -422,8 +422,12 @@ def run_e2e(service_bin, keep_workspace):
         build1_stdout = build1.get("data", {}).get("stdout", "")
 
         # 首次编译应该失败（因为 json_parser.cj 缺少 import std.convert.*）
-        record(build1_exit != 0,
-               "首次编译失败（预期行为，AI 代码有遗漏）")
+        # 验证编译器错误确实与 parse / convert 相关
+        build1_output = build1_stderr + build1_stdout
+        record(build1_exit != 0 and ("parse" in build1_output.lower()
+               or "convert" in build1_output.lower()
+               or "undeclared" in build1_output.lower()),
+               "首次编译失败且错误与缺少 import 相关（预期行为）")
 
         agent_analyse(
             f"编译失败 (exit={build1_exit})。"
@@ -544,8 +548,13 @@ def run_e2e(service_bin, keep_workspace):
 
         # 首次测试运行应该失败（因为 json_value.cj 的枚举缺少 @Derive[Equatable]，
         # 测试代码中使用 == 比较枚举值时会编译报错）
-        record(test1_exit != 0,
-               "首次测试编译失败（预期行为，枚举缺少 @Derive 注解）")
+        # 验证编译器错误确实与枚举比较 / Equatable 相关
+        test1_output = test1_stderr + test1_stdout
+        record(test1_exit != 0 and ("==" in test1_output
+               or "operator" in test1_output.lower()
+               or "equatable" in test1_output.lower()
+               or "deriving" in test1_output.lower()),
+               "首次测试编译失败且错误与枚举比较相关（预期行为）")
 
         agent_analyse(
             f"测试编译失败 (exit={test1_exit})。"
@@ -586,6 +595,17 @@ def run_e2e(service_bin, keep_workspace):
         resp = c.execute()
         record(resp[1].get("ok") is True,
                "replace_text: 为枚举插入 @Derive[Equatable]")
+
+        # 读回文件确认修复生效（replace_text 依赖精确匹配，需验证结果）
+        c = client()
+        c.start()
+        c.call_tool("workspace.set_root", {"path": workspace})
+        c.call_tool("workspace.read_file", {"path": "src/json_value.cj"})     # 1
+        resp = c.execute()
+
+        fixed_content = resp[1].get("data", {}).get("content", "")
+        record("@Derive[Equatable]" in fixed_content,
+               "验证修复: json_value.cj 已包含 @Derive[Equatable]")
 
         agent_analyse("已通过 replace_text 为 JsonValueKind 添加 @Derive[Equatable] 注解。"
                       "\n     准备重新运行测试。")
