@@ -11,7 +11,8 @@ func isMutatingTool(tool: String): Bool {
     return tool == "workspace.replace_text" ||
         tool == "workspace.create_file" ||
         tool == "cangjie.edit_ast_node" ||
-        tool == "project.bootstrap_json_parser"
+        tool == "project.bootstrap_json_parser" ||
+        tool == "project.bootstrap"
 }
 
 func appendValidationSteps(steps: Array<PlannedToolCall>, allowedTools!: Array<String> = ["workspace.run_build", "workspace.run_test"]): Array<PlannedToolCall> {
@@ -25,7 +26,7 @@ func appendValidationSteps(steps: Array<PlannedToolCall>, allowedTools!: Array<S
         results.add(step)
         if (isMutatingTool(tool)) {
             requiresValidation = true
-            if (tool == "project.bootstrap_json_parser") {
+            if (tool == "project.bootstrap_json_parser" || tool == "project.bootstrap") {
                 // bootstrap 往往生成独立子项目，因此优先对目标目录做构建/测试，
                 // 避免错误地在当前目录执行验证。
                 let bootstrapPath = jsonField(step.arguments, "path")

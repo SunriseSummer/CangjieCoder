@@ -214,4 +214,46 @@ class AgentHelpersTest {
         let summary = buildCompactWorkspaceSummary("{}")
         @Expect(summary.contains("0 files total"))
     }
+
+    @TestCase
+    func fallbackPlanDetectsTodoProjectRequest() {
+        let context = AgentPlanningContext(
+            "创建一个待办事项项目",
+            "{\"tools\":[{\"name\":\"project.bootstrap\"},{\"name\":\"workspace.list_files\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[]}}",
+            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        @Expect(plan.steps.size > 0)
+        @Expect(plan.steps[0].tool, "project.bootstrap")
+        @Expect(jsonField(plan.steps[0].arguments, "project_id"), "todo_list")
+    }
+
+    @TestCase
+    func fallbackPlanDetectsCalculatorProjectRequest() {
+        let context = AgentPlanningContext(
+            "bootstrap a calculator project",
+            "{\"tools\":[{\"name\":\"project.bootstrap\"},{\"name\":\"workspace.list_files\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[]}}",
+            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        @Expect(plan.steps.size > 0)
+        @Expect(plan.steps[0].tool, "project.bootstrap")
+        @Expect(jsonField(plan.steps[0].arguments, "project_id"), "calculator")
+    }
+
+    @TestCase
+    func fallbackPlanDefaultsToJsonParserForGenericNewProject() {
+        let context = AgentPlanningContext(
+            "创建一个新项目",
+            "{\"tools\":[{\"name\":\"project.bootstrap\"},{\"name\":\"workspace.list_files\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[]}}",
+            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        @Expect(plan.steps.size > 0)
+        @Expect(plan.steps[0].tool, "project.bootstrap")
+        @Expect(jsonField(plan.steps[0].arguments, "project_id"), "json_parser")
+    }
 }
