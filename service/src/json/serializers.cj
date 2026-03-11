@@ -4,7 +4,6 @@ package cangjiecoder.json
 import stdx.encoding.json.*
 import cangjiecoder.lsp.*
 import cangjiecoder.skills.*
-import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
 
 // 将 SkillRecord 数组序列化为 JSON 字符串
@@ -31,22 +30,6 @@ public func analysisJson(result: AnalysisResult): String {
     root.put("success", JsonBool(result.success))
     root.put("summary", JsonString(result.summary))
     root.put("output", JsonString(result.output))
-    return root.toString()
-}
-
-// 将 example 项目列表序列化为 JSON 字符串
-public func exampleProjectsJson(serviceRoot: String): String {
-    let array = JsonArray()
-    for (project in listExampleProjects(serviceRoot)) {
-        let item = JsonObject()
-        item.put("id", JsonString(project.id))
-        item.put("name", JsonString(project.name))
-        item.put("description", JsonString(project.description))
-        item.put("templatePath", JsonString(project.templatePath))
-        array.add(item)
-    }
-    let root = JsonObject()
-    root.put("projects", array)
     return root.toString()
 }
 

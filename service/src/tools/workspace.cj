@@ -6,7 +6,6 @@ import std.fs.*
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.projects.*
 
 const WORKSPACE_COMMAND_OUTPUT_PREVIEW_LINES: Int64 = 20
 let allowedWorkspaceCommands: Array<String> = ["cjpm", "cjc", "cjlint", "tree-sitter", "find", "grep"]

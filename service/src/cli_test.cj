@@ -28,7 +28,6 @@ class CliArgoptTest {
         @Expect(registry.contains("help"))
         @Expect(registry.contains("skills"))
         @Expect(registry.contains("skills-search"))
-        @Expect(registry.contains("examples"))
         @Expect(registry.contains("analyze"))
         @Expect(registry.contains("create-file"))
         @Expect(registry.contains("lsp-status"))

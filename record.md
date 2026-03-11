@@ -620,3 +620,66 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 - `mcp.md` — 更新工具总览表（22 → 26）、目录、概述；新增 4 个工具的详细文档（功能、原理、参数、示例）
 - `service/README.md` — 更新工具列表表格，新增 4 个工具条目
 - `record.md` — 新增第六章记录本次变更
+
+## 七、移除内置模板体系，增强 Agent 开发策略
+
+### 7.1 问题与动机
+
+通过实际开发多个仓颉项目（JsonParser、TodoList、Calculator），发现内置模板引导方式并非必要——仓颉官方的 `cjpm init` 命令已经足以初始化新项目。内置模板增加了代码维护负担，且 Agent 不应依赖预制模板，而应具备基于 `cjpm init` + 技能文档自主创建任意项目的能力。
+
+### 7.2 删除清单
+
+**Service 层**：
+- 删除 `service/src/projects/` 子包（`templates.cj`）
+- 删除 `service/src/tools/project.cj`（工具处理函数）
+- 删除 3 个 MCP 工具定义：`project.list_examples`、`project.bootstrap_json_parser`、`project.bootstrap`
+- 删除 CLI 子命令：`examples`、`bootstrap-json-parser`、`bootstrap`
+- 删除 `exampleProjectsJson()` 序列化函数
+- 工具总数：26 → 24（后续若有需要，可通过 `cjpm init` 替代）
+- `ensurePlannedWorkspacePath()` 迁移至 `cangjiecoder.common`（仍被 `workspace.create_file` 使用）
+
+**Agent 层**：
+- 从 `AgentPlanningContext` 中移除 `exampleProjectsJson` 字段
+- 从 `runner.cj` 中移除 `project.list_examples` 调用
+- 从 `executor.cj` 中移除 `project.bootstrap*` 的 mutating tool 判定
+- 删除 `extractTargetPathFromPrompt()`、`detectExampleProjectId()` 等辅助函数
+
+**模板文件**：
+- 删除 `tests/json_parser/`、`tests/todo_list/`、`tests/calculator/`
+
+**Python 集成测试**：
+- 删除 `tests/test_project.py`（测试已移除的模板工具）
+- 从 `tests/run_all.py` 中移除 `test_project` 模块
+
+### 7.3 开发经验注入
+
+将开发多个仓颉项目过程中总结的经验和最佳实践注入 Agent 提示词和规划策略中：
+
+**仓颉语言关键注意事项**（注入 `prompts.cj` 提示词）：
+- `Bool` 是关键字，不能用作 enum 变体名，需用 `JBool` 等前缀
+- `Float64.parse()` 需要 `import std.convert.*`
+- `for (ch in str)` 迭代 `UInt8` 字节而非 `Rune` 字符，应使用子串切片
+- 优先使用 `Option<T>` + `if-let` 而非 `try-catch` 处理可恢复错误
+- 代码变更后立即运行 `workspace.run_build` 捕获编译错误
+- 编写代码前先用 `skills.search` 查阅语言特性文档
+- 分析代码时先用 `cangjie.ast_summary` 获取概览，再用 `cangjie.ast_query_nodes` 定位具体节点
+
+**Agent 规划策略增强**（注入 `planning.cj`）：
+- 新建项目：检测到「新项目/新建/init」关键词时，使用 `workspace.run_command` 调用 `cjpm init`
+- 特性查询：检测到语言特性关键词（JSON/HTTP/enum/class/泛型/接口等）时，优先调用 `skills.search`
+- 提示词中不再引导模型使用 `project.bootstrap`，改为引导使用 `cjpm init`
+
+### 7.4 新增测试
+
+**Cangjie 单元测试**（`agent_test.cj`）：
+- `fallbackPlanUsesRunCommandForNewProject` — 验证新建项目使用 `workspace.run_command`
+- `fallbackPlanSearchesSkillsForFeatureQuestions` — 验证特性问题优先搜索技能文档
+- `fallbackPlanInspectsCjpmTomlWhenPresent` — 验证工作区含 `cjpm.toml` 时自动读取
+- `appendValidationStepsTreatsEditAstNodeAsMutation` — 验证 AST 编辑触发自动验证
+
+**Python 集成测试**：
+- `test_tools_inventory.py` — 29 个测试用例：验证 24 个工具全部存在、3 个已删除工具不存在、所有工具有描述
+- `test_workspace_commands.py` — 新增 `run_command_cjpm_allowed` 验证 `cjpm` 在白名单中
+- `test_skills_enhanced.py` — 工具总数断言更新为 24
+
+**测试汇总**：217 个 Cangjie 测试 + 141 个 Python 集成测试全部通过

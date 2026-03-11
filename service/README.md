@@ -17,7 +17,6 @@ service/
 │   ├── json/       # JSON 解析与序列化工具
 │   ├── lsp/        # LSP 协议、会话管理与查询
 │   ├── mcp/        # MCP 协议层（工具定义、帧编解码）
-│   ├── projects/   # 项目模板管理
 │   ├── skills/     # 技能注册表
 │   └── tools/      # MCP 工具处理函数（按类别拆分）
 └── README.md
@@ -102,13 +101,6 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | `cangjie.lsp_document_symbols` | 查询文档符号 |
 | `cangjie.lsp_workspace_symbols` | 查询工作区级符号 |
 | `cangjie.lsp_definition` | 解析符号定义位置 |
-
-### 项目模板
-
-| 工具名 | 说明 |
-|--------|------|
-| `project.list_examples` | 列出可引导的示例项目 |
-| `project.bootstrap_json_parser` | 将 JsonParser 示例复制到工作区 |
 
 > `service` 不再直接承载 AI Provider / 会话记忆能力；这些逻辑已经全部迁移到 `agent/`，因此 `service` 可以作为更纯粹的仓颉 MCP 工具服务独立复用。
 

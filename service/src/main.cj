@@ -8,7 +8,6 @@ import std.fs.*
 import cangjiecoder.common.*
 import cangjiecoder.lsp.*
 import cangjiecoder.skills.*
-import cangjiecoder.projects.*
 import cangjiecoder.analysis.*
 import cangjiecoder.tools.*
 
@@ -23,8 +22,6 @@ func printUsage(): Unit {
     println("  mcp-stdio                     Start MCP stdio server")
     println("  skills                        List all registered skills")
     println("  skills-search <query>         Search skills by keyword")
-    println("  examples                      List example projects")
-    println("  bootstrap-json-parser <path>  Generate a JSON parser project at <path>")
     println("  analyze <path>                Analyze a Cangjie source file")
     println("  create-file <path> [content]  Create a new workspace file")
     println("  lsp-status                    Check LSP availability")
@@ -114,23 +111,6 @@ func cmdSkillsSearch(config: AppConfig, nonOptions: Array<String>): Int64 {
     return 0
 }
 
-func cmdExamples(config: AppConfig, _: Array<String>): Int64 {
-    for (project in listExampleProjects(config.serviceRoot)) {
-        println("${project.id}: ${project.description}")
-    }
-    return 0
-}
-
-func cmdBootstrapJsonParser(config: AppConfig, nonOptions: Array<String>): Int64 {
-    let path = nonOptionAt(nonOptions, 1)
-    if (path.isEmpty()) {
-        eprintln("bootstrap-json-parser requires a target path")
-        return 1
-    }
-    println(bootstrapJsonParserProject(config.serviceRoot, config.workspaceRoot, path))
-    return 0
-}
-
 func cmdAnalyze(config: AppConfig, nonOptions: Array<String>): Int64 {
     let path = nonOptionAt(nonOptions, 1)
     if (path.isEmpty()) {
@@ -215,8 +195,6 @@ func buildSubcommandRegistry(): HashMap<String, CliSubcommandHandler> {
     registry["mcp-stdio"] = cmdMcpStdio
     registry["skills"] = cmdSkills
     registry["skills-search"] = cmdSkillsSearch
-    registry["examples"] = cmdExamples
-    registry["bootstrap-json-parser"] = cmdBootstrapJsonParser
     registry["analyze"] = cmdAnalyze
     registry["create-file"] = cmdCreateFile
     registry["lsp-status"] = cmdLspStatus

@@ -31,7 +31,7 @@ import test_workspace_commands  # noqa: E402
 import test_ast  # noqa: E402
 import test_ast_enhanced  # noqa: E402
 import test_lsp  # noqa: E402
-import test_project  # noqa: E402
+import test_tools_inventory  # noqa: E402
 
 TEST_MODULES = [
     ("Skills Search", test_skills),
@@ -41,8 +41,8 @@ TEST_MODULES = [
     ("AST Analysis", test_ast),
     ("AST Enhanced", test_ast_enhanced),
     ("LSP Integration", test_lsp),
-    ("Project Templates", test_project),
     ("Workspace Edit & Rollback", test_workspace_edit),
+    ("Tool Inventory", test_tools_inventory),
 ]
 
 

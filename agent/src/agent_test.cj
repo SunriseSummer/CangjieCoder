@@ -17,21 +17,20 @@ class AgentHelpersTest {
     }
 
     @TestCase
-    func appendValidationStepsAddsBuildAndTestForBootstrap() {
+    func appendValidationStepsAddsBuildAndTestForCreateFile() {
         let args = JsonObject()
-        args.put("path", JsonString("target/generated-json-parser"))
-        let steps = appendValidationSteps([PlannedToolCall("project.bootstrap_json_parser", args, "bootstrap")], allowedTools: ["project.bootstrap_json_parser", "workspace.run_build", "workspace.run_test"])
+        args.put("path", JsonString("src/generated_helper.cj"))
+        let steps = appendValidationSteps([PlannedToolCall("workspace.create_file", args, "create helper")], allowedTools: ["workspace.create_file", "workspace.run_build", "workspace.run_test"])
         @Expect(steps.size == 3)
         @Expect(steps[1].tool, "workspace.run_build")
-        @Expect(jsonField(steps[1].arguments, "path"), "target/generated-json-parser")
         @Expect(steps[2].tool, "workspace.run_test")
     }
 
     @TestCase
-    func appendValidationStepsTreatsCreateFileAsMutation() {
+    func appendValidationStepsTreatsEditAstNodeAsMutation() {
         let args = JsonObject()
-        args.put("path", JsonString("src/generated_helper.cj"))
-        let steps = appendValidationSteps([PlannedToolCall("workspace.create_file", args, "create helper")], allowedTools: ["workspace.create_file", "workspace.run_build", "workspace.run_test"])
+        args.put("path", JsonString("src/main.cj"))
+        let steps = appendValidationSteps([PlannedToolCall("cangjie.edit_ast_node", args, "edit")], allowedTools: ["cangjie.edit_ast_node", "workspace.run_build", "workspace.run_test"])
         @Expect(steps.size == 3)
         @Expect(steps[1].tool, "workspace.run_build")
         @Expect(steps[2].tool, "workspace.run_test")
@@ -92,18 +91,11 @@ class AgentHelpersTest {
     }
 
     @TestCase
-    func extractTargetPathFromPromptStopsAtChinesePunctuation() {
-        let path = extractTargetPathFromPrompt("请创建示例项目到 target/agent-e2e-demo，并执行测试")
-        @Expect(path, "target/agent-e2e-demo")
-    }
-
-    @TestCase
     func parsePlanFiltersUnsupportedModelSteps() {
         let context = AgentPlanningContext(
             "分析当前工程",
             "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"}]}",
-            "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}",
-            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}"
         )
         let plan = parsePlan("{\"summary\":\"demo\",\"steps\":[{\"tool\":\"unknown.tool\",\"arguments\":{},\"reason\":\"bad\"},{\"tool\":\"workspace.read_file\",\"arguments\":{\"path\":\"README.md\"},\"reason\":\"good\"}]}", context)
         @Expect(plan.steps.size == 1)
@@ -115,8 +107,7 @@ class AgentHelpersTest {
         let context = AgentPlanningContext(
             "请分析并优化这个仓颉项目",
             "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"cangjie.lsp_document_symbols\"},{\"name\":\"cangjie.analyze_file\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.run_test\"}]}",
-            "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}",
-            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}"
         )
         let plan = parsePlan("", context)
         @Expect(plan.steps.size == 6)
@@ -134,8 +125,7 @@ class AgentHelpersTest {
         let context = AgentPlanningContext(
             "完成任务",
             "{\"tools\":[{\"name\":\"workspace.list_files\"}]}",
-            "{\"ok\":true,\"data\":{\"files\":[\"README.md\"]}}",
-            "{\"ok\":true,\"data\":{\"projects\":[]}}"
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\"]}}"
         )
         let plan = parsePlan("{\"summary\":\"done\",\"steps\":[]}", context)
         @Expect(plan.summary, "done")
@@ -165,7 +155,6 @@ class AgentHelpersTest {
 
     @TestCase
     func extractJsonObjectTextHandlesMultipleJsonBlocks() {
-        // 当模型输出包含多个 JSON 块时，优先返回包含 steps 字段的对象
         let text = "Here are two objects:\n{\"type\":\"config\"}\n{\"summary\":\"plan\",\"steps\":[]}"
         let json = extractJsonObjectText(text)
         @Expect(json.contains("steps"))
@@ -174,7 +163,6 @@ class AgentHelpersTest {
 
     @TestCase
     func extractJsonObjectTextHandlesBracesInStrings() {
-        // JSON 字符串内的花括号不应干扰深度计数
         let text = "{\"summary\":\"object with { braces } inside\",\"steps\":[]}"
         let json = extractJsonObjectText(text)
         @Expect(json.contains("steps"))
@@ -183,7 +171,6 @@ class AgentHelpersTest {
 
     @TestCase
     func extractJsonObjectTextHandlesBracesAfterJson() {
-        // JSON 对象之后出现花括号（如代码示例）不应导致解析失败
         let text = "Plan: {\"summary\":\"ok\",\"steps\":[]} and here is code { func() {} }"
         let json = extractJsonObjectText(text)
         @Expect(json.contains("summary"))
@@ -205,7 +192,6 @@ class AgentHelpersTest {
         @Expect(summary.contains("cjpm.toml"))
         @Expect(summary.contains("src/main.cj"))
         @Expect(summary.contains("src/helper.cj"))
-        // test files 应被排除在源码文件列表之外
         @Expect(!summary.contains("helper_test.cj"))
     }
 
@@ -213,5 +199,49 @@ class AgentHelpersTest {
     func buildCompactWorkspaceSummaryHandlesEmptySnapshot() {
         let summary = buildCompactWorkspaceSummary("{}")
         @Expect(summary.contains("0 files total"))
+    }
+
+    @TestCase
+    func fallbackPlanUsesRunCommandForNewProject() {
+        // 新建项目应使用 workspace.run_command 调用 cjpm init，而非内置模板
+        let context = AgentPlanningContext(
+            "创建一个新项目",
+            "{\"tools\":[{\"name\":\"workspace.run_command\"},{\"name\":\"workspace.run_build\"},{\"name\":\"workspace.list_files\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        @Expect(plan.steps.size > 0)
+        @Expect(plan.steps[0].tool, "workspace.run_command")
+    }
+
+    @TestCase
+    func fallbackPlanSearchesSkillsForFeatureQuestions() {
+        // 当提示词涉及语言特性时，应优先搜索技能文档
+        let context = AgentPlanningContext(
+            "怎么写仓颉的 enum 模式匹配",
+            "{\"tools\":[{\"name\":\"skills.search\"},{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\"]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        @Expect(plan.steps.size > 0)
+        @Expect(plan.steps[0].tool, "skills.search")
+    }
+
+    @TestCase
+    func fallbackPlanInspectsCjpmTomlWhenPresent() {
+        // 工作区包含 cjpm.toml 时，fallback plan 应读取它
+        let context = AgentPlanningContext(
+            "请分析这个项目",
+            "{\"tools\":[{\"name\":\"workspace.list_files\"},{\"name\":\"workspace.read_file\"},{\"name\":\"workspace.run_build\"}]}",
+            "{\"ok\":true,\"data\":{\"files\":[\"README.md\",\"cjpm.toml\",\"src/main.cj\"]}}"
+        )
+        let plan = buildFallbackPlan(context)
+        var readsCjpmToml = false
+        for (step in plan.steps) {
+            if (step.tool == "workspace.read_file" && jsonField(step.arguments, "path") == "cjpm.toml") {
+                readsCjpmToml = true
+            }
+        }
+        @Expect(readsCjpmToml)
     }
 }

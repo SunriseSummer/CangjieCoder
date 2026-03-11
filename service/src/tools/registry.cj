@@ -17,8 +17,6 @@ public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["workspace.run_test"] = handleRunTest
     registry["workspace.run_command"] = handleRunCommand
     registry["cangjie.analyze_file"] = handleAnalyzeFile
-    registry["project.list_examples"] = handleListExamples
-    registry["project.bootstrap_json_parser"] = handleBootstrapJsonParser
     registry["cangjie.lsp_status"] = handleLspStatus
     registry["cangjie.lsp_probe"] = handleLspProbe
     registry["cangjie.lsp_document_symbols"] = handleLspDocumentSymbols

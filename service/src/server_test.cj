@@ -123,9 +123,6 @@ class ServerMcpTest {
                 // LSP
                 @Expect(payload.contains("cangjie.lsp_status"))
                 @Expect(payload.contains("cangjie.lsp_probe"))
-                // Project
-                @Expect(payload.contains("project.list_examples"))
-                @Expect(payload.contains("project.bootstrap_json_parser"))
             case None =>
                 @Expect(false)
         }
@@ -294,19 +291,6 @@ class ServerMcpTest {
             }
         } finally {
             removeIfExists(workspace.toString(), recursive: true)
-        }
-    }
-
-    @TestCase
-    func runtimeCanListExampleProjects() {
-        let runtime = createMcpRuntime(getWorkingDirectory().toString())
-        let response = runtime.handleRequest("{\"jsonrpc\":\"2.0\",\"id\":15,\"method\":\"tools/call\",\"params\":{\"name\":\"project.list_examples\",\"arguments\":{}}}")
-        match (response) {
-            case Some(payload) =>
-                @Expect(payload.contains("\"ok\":true"))
-                @Expect(payload.contains("json_parser"))
-            case None =>
-                @Expect(false)
         }
     }
 
