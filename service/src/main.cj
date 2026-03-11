@@ -7,9 +7,10 @@ import std.env.*
 import std.fs.*
 import cangjiecoder.common.*
 import cangjiecoder.lsp.*
+import cangjiecoder.mcp.*
 import cangjiecoder.skills.*
 import cangjiecoder.analysis.*
-import cangjiecoder.tools.*
+import cangjiecoder.workspace.*
 
 // 打印 CLI 用法，列出所有子命令及全局选项
 func printUsage(): Unit {

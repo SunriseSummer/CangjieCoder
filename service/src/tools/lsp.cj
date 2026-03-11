@@ -2,6 +2,7 @@
 package cangjiecoder.tools
 
 import stdx.encoding.json.*
+import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.lsp.*
 

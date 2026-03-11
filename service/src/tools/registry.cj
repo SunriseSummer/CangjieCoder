@@ -2,6 +2,8 @@
 package cangjiecoder.tools
 
 import std.collection.*
+import cangjiecoder.common.*
+import cangjiecoder.workspace.*
 
 public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     let registry = HashMap<String, McpToolHandler>()
@@ -24,7 +26,7 @@ public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["cangjie.lsp_definition"] = handleLspDefinition
     registry["cangjie.edit_ast_node"] = handleEditAstNode
     registry["workspace.rollback"] = handleRollback
-    // workspace.set_root 和 workspace.get_root 在 handleToolsCall 中直接处理（需访问 McpRuntime），
+    // workspace.set_root 和 workspace.get_root 在 mcp/handlers.cj 的 handleToolsCall 中直接处理（需访问 McpRuntime），
     // 此处注册占位处理函数以保持工具定义与注册表一致。
     registry["workspace.set_root"] = handleWorkspaceRootPlaceholder
     registry["workspace.get_root"] = handleWorkspaceRootPlaceholder

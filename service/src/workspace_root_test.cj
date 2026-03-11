@@ -3,11 +3,9 @@ package cangjiecoder
 
 import std.env.*
 import std.fs.*
-import cangjiecoder.common.*
-import cangjiecoder.json.*
 import cangjiecoder.mcp.*
 import cangjiecoder.tools.*
-import stdx.encoding.json.*
+import cangjiecoder.workspace.*
 
 @Test
 class WorkspaceRootTest {
