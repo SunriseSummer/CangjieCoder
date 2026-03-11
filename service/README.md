@@ -51,10 +51,17 @@ cjpm test
 
 ```bash
 cd service
-cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
+cjpm run --run-args "mcp-stdio"
 ```
 
-`--repo` 指向要被分析/修改/构建/测试的目标仓库；如果省略，则默认作用于 `service` 当前目录。
+工作区路径支持多种设置方式（按优先级从高到低）：
+
+1. **MCP 客户端自动提供**：VS Code / Cursor 等客户端在 `initialize` 请求中自动发送 roots，服务端自动获取工作区路径
+2. **AI 主动设置**：AI 调用 `workspace.set_root` 工具在会话中动态切换工作区
+3. **启动参数指定**：`--repo /absolute/path/to/workspace` 显式指定目标仓库
+4. **默认当前目录**：如果以上均未设置，则使用当前工作目录
+
+此外，任何工具调用都可以通过 `workspacePath` 参数临时覆盖工作区路径（仅对当前调用生效）。
 
 ## MCP 工具列表
 
@@ -79,6 +86,13 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | `workspace.run_test` | 在工作区中运行 `cjpm test` |
 | `workspace.run_command` | 运行受限白名单命令 |
 | `workspace.rollback` | 回滚所有文件修改到编辑前状态 |
+
+### 工作区管理
+
+| 工具名 | 说明 |
+|--------|------|
+| `workspace.set_root` | 动态设置会话级工作区根目录 |
+| `workspace.get_root` | 查询当前工作区根目录 |
 
 ### Cangjie 分析与 AST
 

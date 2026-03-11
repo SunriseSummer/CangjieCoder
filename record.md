@@ -683,3 +683,106 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 - `test_skills_enhanced.py` — 工具总数断言更新为 24
 
 **测试汇总**：217 个 Cangjie 测试 + 141 个 Python 集成测试全部通过
+
+### 8. 动态工作区路径管理（Issue #8）
+
+#### 8.1 问题分析
+
+**原始问题**：MCP 服务启动时必须通过 `--repo` 参数指定目标仓库工作目录。这在将服务接入 VS Code / Cursor / OpenCode 等主流 AI 工具时存在不便——用户需要在 MCP 配置文件中硬编码项目路径，切换项目需要修改配置并重启服务。
+
+**核心诉求**：
+- AI 侧能否主动传入工作路径？
+- MCP 服务侧能否主动获取工作路径？
+
+#### 8.2 方案分析与对比
+
+我们评估了以下五种获取项目工作目录的方式，最终采用"多级回退"组合策略：
+
+| 方式 | 原理 | 优点 | 缺点 | 是否采用 |
+|------|------|------|------|---------|
+| **`--repo` 启动参数** | 服务启动时通过命令行传入 | 简单直接；用户意图明确 | 需要硬编码路径；切换项目必须重启 | ✅ 保留（作为最后兜底） |
+| **MCP `initialize` roots** | MCP 客户端在握手时自动发送工作区 URI | 零配置；客户端自动提供；符合 MCP 协议规范 | 依赖客户端支持 roots 能力；不是所有客户端都支持 | ✅ 新增 |
+| **`workspace.set_root` 工具** | AI 通过工具调用动态设置工作区 | 灵活；AI 主动控制；支持会话内切换项目 | 需要 AI 额外调用一次工具 | ✅ 新增 |
+| **`workspacePath` 工具参数** | 每次工具调用可附加临时工作区覆盖 | 最灵活；可跨项目操作；不影响全局状态 | 冗余：每次调用都要传；不适合常规使用 | ✅ 新增 |
+| **环境变量** | 通过 `CANGJIECODER_WORKSPACE` 等环境变量 | 与 CI/CD 集成方便；启动前设定 | 不够灵活；不能会话内动态切换 | ❌ 未采用（收益不明显） |
+
+**选择理由**：
+
+1. **`initialize` roots 是最推荐的方式**。它是 MCP 协议的标准能力，VS Code / Cursor 等主流客户端在连接 MCP 服务器时自动发送 roots 信息，服务端无需任何额外配置即可正确获取工作区路径。用户只需要配置一次 MCP 服务器（不含 `--repo`），就能在任何项目中自动工作。
+
+2. **`workspace.set_root` 是最重要的补充**。当客户端不支持 roots（例如 OpenCode 的某些版本），或者需要在会话中动态切换项目时，AI 可以主动调用此工具。这是"AI 侧主动传入工作路径"的直接实现。
+
+3. **`workspacePath` 参数提供了最大灵活性**。它不改变全局状态，适合临时跨项目查看文件的场景。但在日常使用中很少需要。
+
+4. **未采用环境变量方式**。因为 `initialize` roots 和 `workspace.set_root` 已经覆盖了所有动态场景，环境变量仅在启动前有效，和 `--repo` 的能力重叠，额外收益不大。
+
+**优先级设计**（从高到低）：
+
+```
+workspacePath 参数（单次覆盖）> workspace.set_root（会话级）> initialize roots（自动检测）> --repo（启动参数）> cwd（兜底）
+```
+
+这个优先级确保：显式的临时覆盖 > 显式的会话级设置 > 自动检测 > 启动时默认值。当 `--repo` 被显式指定时，`initialize` roots 不会覆盖它（尊重用户的显式意图）。
+
+#### 8.3 实现要点
+
+**核心变更**（`service/src/mcp_handlers.cj`）：
+
+- `McpRuntime.workspaceRoot` 从 `let`（不可变）改为 `var`（可变），支持会话中动态修改
+- `McpRuntime.hasExplicitRepo` 新增字段，记录用户是否通过 `--repo` 显式指定了工作区
+- `handleInitialize()` 增加 roots 解析逻辑：从 `params.roots[0].uri` 提取 `file://` URI 并转换为本地路径
+- `handleToolsCall()` 增加三层调度：
+  1. 拦截 `workspace.set_root` → 直接修改 `runtime.workspaceRoot`
+  2. 拦截 `workspace.get_root` → 返回当前 `workspaceRoot`
+  3. 通用路径：调用 `resolveEffectiveWorkspaceRoot()` 检查 `workspacePath` 参数覆盖
+
+**新增工具**：
+- `workspace.set_root`：验证路径（绝对路径 + 目录存在 + canonicalize）后更新 `runtime.workspaceRoot`
+- `workspace.get_root`：返回当前 `workspaceRoot`
+
+**新增辅助函数**：
+- `extractFirstRootPath(params)`：从 initialize 参数解析 roots
+- `fileUriToPath(uri)`：将 `file:///path` URI 转换为 `/path`
+- `resolveEffectiveWorkspaceRoot(default, args)`：检查 `workspacePath` 参数
+- `isDirectory(path)`：通过 `Directory.isEmpty()` 检查路径是否为目录
+
+**安全保障**：
+- `workspace.set_root` 和 `workspacePath` 都要求绝对路径且目录必须存在
+- 所有文件操作仍通过 `ensureWorkspacePath()` 进行防逃逸检查
+- 无效的 `workspacePath` 静默回退到默认工作区（不中断工具调用）
+
+#### 8.4 客户端配置简化
+
+**优化前**（需要硬编码 `--repo`）：
+```json
+{
+  "args": ["mcp-stdio", "--repo", "/absolute/path/to/workspace"]
+}
+```
+
+**优化后**（无需指定 `--repo`，客户端自动提供工作区）：
+```json
+{
+  "args": ["mcp-stdio"]
+}
+```
+
+#### 8.5 新增测试
+
+**Cangjie 单元测试**（`workspace_root_test.cj`，18 个测试用例）：
+- `getRootReturnsCurrentWorkspace` — 验证 `get_root` 返回当前工作区
+- `setRootUpdatesWorkspace` — 验证 `set_root` 更新 `runtime.workspaceRoot`
+- `setRootRejectsEmptyPath` — 验证空路径被拒绝
+- `setRootRejectsRelativePath` — 验证相对路径被拒绝
+- `setRootRejectsNonexistentPath` — 验证不存在的路径被拒绝
+- `setRootPersistsAcrossToolCalls` — 验证设置后对后续调用持久生效
+- `initializeWithRootsUpdatesWorkspace` — 验证 initialize roots 自动设置工作区
+- `initializeWithExplicitRepoIgnoresRoots` — 验证 `--repo` 指定时 roots 不覆盖
+- `initializeWithoutRootsKeepsDefault` — 验证无 roots 时保持默认值
+- `initializeWithInvalidRootPathKeepsDefault` — 验证无效 root 路径时保持默认值
+- `workspacePathOverridesDefaultRoot` — 验证 `workspacePath` 参数临时覆盖
+- `workspacePathIgnoresInvalidPath` / `workspacePathIgnoresRelativePath` — 验证无效路径处理
+- `fileUriToPathParsesStandardUri` / `fileUriToPathRejectsNonFileUri` / `fileUriToPathRejectsEmptyString` — URI 解析
+- `toolDefinitionsIncludeSetAndGetRoot` / `toolRegistryIncludesSetAndGetRoot` — 工具注册验证
+
+**测试汇总**：235 个 Cangjie 测试全部通过
