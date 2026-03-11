@@ -282,6 +282,24 @@ func analysisRunCommand(command: String, arguments: Array<String>, workingDirect
     }
 }
 
+// 子包内部的工作区相对路径计算
+func analysisWorkspaceRelativePath(repoRoot: String, path: String): String {
+    let canonicalRoot = canonicalize(repoRoot).toString()
+    let canonicalPath = if (exists(path)) {
+        canonicalize(path).toString()
+    } else {
+        path
+    }
+    if (canonicalPath == canonicalRoot) {
+        return "."
+    }
+    let prefix = "${canonicalRoot}/"
+    if (canonicalPath.startsWith(prefix)) {
+        return canonicalPath[prefix.size..canonicalPath.size]
+    }
+    return canonicalPath
+}
+
 // 子包内部的文本预览截取（跳过空行，最多保留 maxLines 行）
 func analysisShortPreview(text: String, maxLines!: Int64 = 8): String {
     let lines = ArrayList<String>()

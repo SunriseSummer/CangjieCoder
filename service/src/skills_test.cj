@@ -6,7 +6,6 @@ import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.lsp.*
 import cangjiecoder.skills.*
-import cangjiecoder.tools.*
 import cangjiecoder.workspace.*
 
 @Test

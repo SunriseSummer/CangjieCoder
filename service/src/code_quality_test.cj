@@ -9,7 +9,6 @@ import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.lsp.*
 import cangjiecoder.mcp.*
-import cangjiecoder.tools.*
 import stdx.encoding.json.*
 
 @Test

@@ -1,16 +1,32 @@
-// 技能搜索工具
-package cangjiecoder.tools
+// 技能搜索工具处理函数
+package cangjiecoder.skills
 
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.skills.*
+
+// 将 SkillRecord 数组序列化为 JSON 字符串
+func skillsResultToJson(skills: Array<SkillRecord>): String {
+    let array = JsonArray()
+    for (skill in skills) {
+        let item = JsonObject()
+        item.put("id", JsonString(skill.id))
+        item.put("name", JsonString(skill.name))
+        item.put("description", JsonString(skill.description))
+        item.put("preview", JsonString(skill.preview))
+        item.put("path", JsonString(skill.path))
+        array.add(item)
+    }
+    let root = JsonObject()
+    root.put("skills", array)
+    return root.toString()
+}
 
 public func handleSkillsSearch(ctx: McpToolContext, args: JsonObject): String {
     let query = jsonField(args, "query")
     let registry = SkillRegistry(ctx.serviceRoot)
     let matches = registry.search(query, limit: 8)
-    let data = parseJsonObject(skillsJson(matches))
+    let data = parseJsonObject(skillsResultToJson(matches))
     return toolResultJson(true, "Skills search completed", data: data)
 }
 

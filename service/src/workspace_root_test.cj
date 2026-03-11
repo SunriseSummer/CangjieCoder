@@ -4,7 +4,6 @@ package cangjiecoder
 import std.env.*
 import std.fs.*
 import cangjiecoder.mcp.*
-import cangjiecoder.tools.*
 import cangjiecoder.workspace.*
 
 @Test

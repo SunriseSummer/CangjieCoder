@@ -9,7 +9,6 @@ import std.fs.*
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.tools.*
 import cangjiecoder.workspace.*
 
 // POSIX write 系统调用声明（用于绕过仓颉 ConsoleWriter 的管道缓冲问题）

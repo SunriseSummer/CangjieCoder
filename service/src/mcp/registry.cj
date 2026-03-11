@@ -1,9 +1,12 @@
 // MCP 工具注册表：将工具名映射到处理函数
-package cangjiecoder.tools
+package cangjiecoder.mcp
 
 import std.collection.*
 import cangjiecoder.common.*
 import cangjiecoder.workspace.*
+import cangjiecoder.skills.*
+import cangjiecoder.analysis.*
+import cangjiecoder.lsp.*
 
 public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     let registry = HashMap<String, McpToolHandler>()
