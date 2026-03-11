@@ -35,7 +35,6 @@ CangjieCoder 由三个仓颉项目组成：
 构建和测试依赖如下：
 
 - Cangjie SDK 1.0.5
-- cangjie-stdx-linux-x64-1.0.5.1
 - 模型 API Key（仅在运行 `agent/` 时通过环境变量注入，不写入仓库）
 
 示例：
