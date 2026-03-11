@@ -96,15 +96,17 @@ public class SkillRegistry {
 }
 
 // 对搜索查询进行分词，支持中英文混合。
-// 先按空格和常见中文连接词（和/或/与/的/在/中/用/把/了/是）拆分，
-// 再对纯中文片段按 2 字滑动窗口切分为更小的关键词。
+// 1. 按空格和常见中文虚词拆分
+// 2. 按下划线和连字符拆分英文复合词（ast_query → [ast, query]）
+// 3. 在中英文交界处拆分混合片段（HTTP服务器 → [HTTP, 服务器]）
+// 4. 对纯中文片段按 2 字滑动窗口切分为更小的关键词
 public func tokenizeQuery(normalized: String): Array<String> {
     // 第一步：按空格拆分
     let spaceParts = normalized.split(" ", removeEmpty: true)
     let segments = ArrayList<String>()
     let particles = ["和", "或", "与", "的", "在", "中", "用", "把", "了", "是",
                      "如何", "怎么", "什么", "哪些", "可以", "使用", "进行",
-                     "以及", "并且", "通过", "关于"]
+                     "以及", "并且", "通过", "关于", "需要", "怎样", "哪个", "一个"]
     for (part in spaceParts) {
         // 在每个 part 中，尝试按中文虚词进一步拆分
         var current = part
@@ -112,16 +114,24 @@ public func tokenizeQuery(normalized: String): Array<String> {
             current = current.replace(p, " ")
         }
         for (sub in current.split(" ", removeEmpty: true)) {
-            segments.add(sub)
+            // 按下划线和连字符进一步拆分英文复合词
+            for (word in sub.replace("_", " ").replace("-", " ").split(" ", removeEmpty: true)) {
+                segments.add(word)
+            }
         }
     }
-    // 第二步：对较长片段生成子词
-    let tokens = ArrayList<String>()
+    // 第二步：在中英文交界处拆分混合片段
+    let splitSegments = ArrayList<String>()
     for (seg in segments) {
+        splitMixedScript(seg, splitSegments)
+    }
+    // 第三步：对纯中文片段生成 bigram 子词
+    let tokens = ArrayList<String>()
+    for (seg in splitSegments) {
         tokens.add(seg)
-        // 对长度 > 2 字节的中文片段，按 2 字符滑动窗口追加子词
         let runes = seg.toRuneArray()
-        if (runes.size > 2) {
+        if (runes.size > 2 && isChineseRune(runes[0])) {
+            // 仅对中文片段生成 bigram，避免英文产生无意义的双字母组合
             for (i in 0..runes.size - 1) {
                 let bigram = "${runes[i]}${runes[i + 1]}"
                 if (!tokens.contains(bigram) && bigram != seg) {
@@ -131,6 +141,42 @@ public func tokenizeQuery(normalized: String): Array<String> {
         }
     }
     return tokens.toArray()
+}
+
+// 将混合中英文的字符串在文字类型交界处拆分
+// 例如 "HTTP服务器" → ["HTTP", "服务器"]
+func splitMixedScript(text: String, result: ArrayList<String>): Unit {
+    let runes = text.toRuneArray()
+    if (runes.isEmpty()) {
+        return
+    }
+    var start = 0
+    var lastIsAscii = isAsciiAlphaNum(runes[0])
+    for (i in 1..=runes.size) {
+        let currentIsAscii = if (i < runes.size) { isAsciiAlphaNum(runes[i]) } else { !lastIsAscii }
+        if (currentIsAscii != lastIsAscii || i == runes.size) {
+            var part = ""
+            for (j in start..i) {
+                part += "${runes[j]}"
+            }
+            let trimmed = part.trimAscii()
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed)
+            }
+            start = i
+            lastIsAscii = currentIsAscii
+        }
+    }
+}
+
+// 判断一个 Rune 是否为 ASCII 字母或数字
+func isAsciiAlphaNum(ch: Rune): Bool {
+    return (ch >= r'a' && ch <= r'z') || (ch >= r'A' && ch <= r'Z') || (ch >= r'0' && ch <= r'9')
+}
+
+// 判断一个 Rune 是否为中文字符（CJK Unified Ideographs 基本区域）
+func isChineseRune(ch: Rune): Bool {
+    return !isAsciiAlphaNum(ch)
 }
 
 public func scoreSkill(skill: SkillRecord, normalized: String, tokens: Array<String>): Int64 {

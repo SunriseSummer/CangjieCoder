@@ -1,0 +1,6 @@
+[package]
+name = "notepad"
+version = "0.1.0"
+cjc-version = "1.0.5"
+output-type = "executable"
+description = "笔记管理应用，支持分类、搜索、归档"

@@ -1,0 +1,75 @@
+// 笔记存储管理器 — 增删改查与搜索
+package notepad
+
+import std.collection.*
+
+// 笔记存储管理器
+public class NoteStore {
+    let notes = ArrayList<Note>()
+
+    public init() {}
+
+    // 添加笔记
+    public func add(note: Note): Unit {
+        notes.add(note)
+    }
+
+    // 按标题关键字搜索
+    public func findByTitle(keyword: String): ArrayList<Note> {
+        let results = ArrayList<Note>()
+        for (note in notes) {
+            if (note.title.contains(keyword)) {
+                results.add(note)
+            }
+        }
+        return results
+    }
+
+    // 按分类筛选（使用模式匹配，不依赖 Equatable）
+    public func findByCategory(cat: NoteCategory): ArrayList<Note> {
+        let results = ArrayList<Note>()
+        for (note in notes) {
+            if (categoryMatch(note.category, cat)) {
+                results.add(note)
+            }
+        }
+        return results
+    }
+
+    // 归档指定标题的笔记
+    public func archive(title: String): Bool {
+        for (note in notes) {
+            if (note.title == title) {
+                note.archived = true
+                return true
+            }
+        }
+        return false
+    }
+
+    // 统计信息
+    public func statistics(): String {
+        var active = 0
+        var archived = 0
+        for (note in notes) {
+            if (note.archived) { archived += 1 } else { active += 1 }
+        }
+        return "共 ${notes.size} 条, ${active} 活跃, ${archived} 归档"
+    }
+
+    // 笔记总数
+    public prop count: Int64 {
+        get() { notes.size }
+    }
+}
+
+// 分类匹配辅助函数（使用模式匹配避免依赖 Equatable）
+func categoryMatch(a: NoteCategory, b: NoteCategory): Bool {
+    match ((a, b)) {
+        case (Work, Work) => true
+        case (Personal, Personal) => true
+        case (Study, Study) => true
+        case (Other, Other) => true
+        case _ => false
+    }
+}
