@@ -1,0 +1,176 @@
+// JSON 词法分析器
+package jsonparser
+
+import std.deriving.*
+
+// Token 类型
+@Derive[Equatable]
+public enum TokenKind {
+    | LBrace      // {
+    | RBrace      // }
+    | LBracket    // [
+    | RBracket    // ]
+    | Colon       // :
+    | Comma       // ,
+    | TString     // "..."
+    | TNumber     // 数字
+    | TTrue       // true
+    | TFalse      // false
+    | TNull       // null
+    | TEof        // 输入结束
+    | TError      // 错误
+}
+
+public class Token {
+    public let kind: TokenKind
+    public let value: String
+    public init(kind: TokenKind, value: String) {
+        this.kind = kind
+        this.value = value
+    }
+}
+
+// 词法分析器（基于 Rune 数组操作，正确处理 Unicode）
+public class JsonLexer {
+    let chars: Array<Rune>
+    var pos: Int64
+
+    public init(source: String) {
+        this.chars = source.toRuneArray()
+        this.pos = 0
+    }
+
+    func atEnd(): Bool {
+        pos >= chars.size
+    }
+
+    func current(): Rune {
+        chars[pos]
+    }
+
+    func advance(): Rune {
+        let ch = chars[pos]
+        pos += 1
+        return ch
+    }
+
+    func skipWhitespace() {
+        while (pos < chars.size) {
+            let ch = chars[pos]
+            if (ch == r' ' || ch == r'\t' || ch == r'\n' || ch == r'\r') {
+                pos += 1
+            } else {
+                break
+            }
+        }
+    }
+
+    func readString(): Token {
+        pos += 1 // skip opening "
+        var result = ""
+        while (pos < chars.size) {
+            let ch = advance()
+            if (ch == r'"') {
+                return Token(TokenKind.TString, result)
+            }
+            if (ch == r'\\') {
+                if (pos >= chars.size) {
+                    return Token(TokenKind.TError, "Unexpected end of string escape")
+                }
+                let esc = advance()
+                if (esc == r'"') {
+                    result += "\""
+                } else if (esc == r'\\') {
+                    result += "\\"
+                } else if (esc == r'/') {
+                    result += "/"
+                } else if (esc == r'n') {
+                    result += "\n"
+                } else if (esc == r't') {
+                    result += "\t"
+                } else if (esc == r'r') {
+                    result += "\r"
+                } else {
+                    result += "\\"
+                    result += esc.toString()
+                }
+            } else {
+                result += ch.toString()
+            }
+        }
+        return Token(TokenKind.TError, "Unterminated string")
+    }
+
+    func isDigit(ch: Rune): Bool {
+        ch >= r'0' && ch <= r'9'
+    }
+
+    func readNumber(): Token {
+        let start = pos
+        if (pos < chars.size && chars[pos] == r'-') {
+            pos += 1
+        }
+        while (pos < chars.size && isDigit(chars[pos])) {
+            pos += 1
+        }
+        if (pos < chars.size && chars[pos] == r'.') {
+            pos += 1
+            while (pos < chars.size && isDigit(chars[pos])) {
+                pos += 1
+            }
+        }
+        if (pos < chars.size && (chars[pos] == r'e' || chars[pos] == r'E')) {
+            pos += 1
+            if (pos < chars.size && (chars[pos] == r'+' || chars[pos] == r'-')) {
+                pos += 1
+            }
+            while (pos < chars.size && isDigit(chars[pos])) {
+                pos += 1
+            }
+        }
+        var numStr = ""
+        var i = start
+        while (i < pos) {
+            numStr += chars[i].toString()
+            i += 1
+        }
+        return Token(TokenKind.TNumber, numStr)
+    }
+
+    func matchKeyword(expected: String): Bool {
+        let expectedRunes = expected.toRuneArray()
+        if (pos + expectedRunes.size > chars.size) {
+            return false
+        }
+        var i = 0
+        while (i < expectedRunes.size) {
+            if (chars[pos + i] != expectedRunes[i]) {
+                return false
+            }
+            i += 1
+        }
+        pos += expectedRunes.size
+        return true
+    }
+
+    public func nextToken(): Token {
+        skipWhitespace()
+        if (atEnd()) {
+            return Token(TokenKind.TEof, "")
+        }
+        let ch = current()
+        if (ch == r'{') { pos += 1; return Token(TokenKind.LBrace, "{") }
+        if (ch == r'}') { pos += 1; return Token(TokenKind.RBrace, "}") }
+        if (ch == r'[') { pos += 1; return Token(TokenKind.LBracket, "[") }
+        if (ch == r']') { pos += 1; return Token(TokenKind.RBracket, "]") }
+        if (ch == r':') { pos += 1; return Token(TokenKind.Colon, ":") }
+        if (ch == r',') { pos += 1; return Token(TokenKind.Comma, ",") }
+        if (ch == r'"') { return readString() }
+        if (ch == r'-' || isDigit(ch)) { return readNumber() }
+        if (matchKeyword("true"))  { return Token(TokenKind.TTrue, "true") }
+        if (matchKeyword("false")) { return Token(TokenKind.TFalse, "false") }
+        if (matchKeyword("null"))  { return Token(TokenKind.TNull, "null") }
+        pos += 1
+        return Token(TokenKind.TError, "Unexpected character: ${ch}")
+    }
+}

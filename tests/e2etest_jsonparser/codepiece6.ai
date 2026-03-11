@@ -1,0 +1,193 @@
+// JsonParser 单元测试
+package jsonparser
+
+import std.unittest.*
+import std.unittest.testmacro.*
+import std.collection.*
+
+@Test
+class JsonParserTest {
+    @TestCase
+    func parseNull() {
+        let r = parseJson("null")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().kind == JsonValueKind.JNull)
+    }
+
+    @TestCase
+    func parseTrue() {
+        let r = parseJson("true")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().boolValue() == true)
+    }
+
+    @TestCase
+    func parseFalse() {
+        let r = parseJson("false")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().boolValue() == false)
+    }
+
+    @TestCase
+    func parseInteger() {
+        let r = parseJson("42")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().numberValue() == 42.0)
+    }
+
+    @TestCase
+    func parseNegativeNumber() {
+        let r = parseJson("-7")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().numberValue() == -7.0)
+    }
+
+    @TestCase
+    func parseFloat() {
+        let r = parseJson("3.14")
+        @Assert(r.ok)
+        let n = r.value.getOrThrow().numberValue()
+        @Assert(n > 3.13 && n < 3.15)
+    }
+
+    @TestCase
+    func parseScientific() {
+        let r = parseJson("1e3")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().numberValue() == 1000.0)
+    }
+
+    @TestCase
+    func parseString() {
+        let r = parseJson(#""hello""#)
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().stringValue() == "hello")
+    }
+
+    @TestCase
+    func parseStringWithEscapes() {
+        let r = parseJson(#""line1\nline2""#)
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().stringValue() == "line1\nline2")
+    }
+
+    @TestCase
+    func parseEmptyArray() {
+        let r = parseJson("[]")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().arrayItems().size == 0)
+    }
+
+    @TestCase
+    func parseArray() {
+        let r = parseJson("[1, 2, 3]")
+        @Assert(r.ok)
+        let items = r.value.getOrThrow().arrayItems()
+        @Assert(items.size == 3)
+        @Assert(items[0].numberValue() == 1.0)
+        @Assert(items[2].numberValue() == 3.0)
+    }
+
+    @TestCase
+    func parseMixedArray() {
+        let r = parseJson(#"[1, "two", true, null]"#)
+        @Assert(r.ok)
+        let items = r.value.getOrThrow().arrayItems()
+        @Assert(items.size == 4)
+        @Assert(items[0].kind == JsonValueKind.JNumber)
+        @Assert(items[1].kind == JsonValueKind.JString)
+        @Assert(items[2].kind == JsonValueKind.JBool)
+        @Assert(items[3].kind == JsonValueKind.JNull)
+    }
+
+    @TestCase
+    func parseEmptyObject() {
+        let r = parseJson("{}")
+        @Assert(r.ok)
+        @Assert(r.value.getOrThrow().objectKeys().size == 0)
+    }
+
+    @TestCase
+    func parseObject() {
+        let r = parseJson(#"{"a": 1, "b": "hello"}"#)
+        @Assert(r.ok)
+        let v = r.value.getOrThrow()
+        @Assert(v.objectKeys().size == 2)
+        match (v.get("a")) {
+            case Some(a) => @Assert(a.numberValue() == 1.0)
+            case None => @Assert(false)
+        }
+        match (v.get("b")) {
+            case Some(b) => @Assert(b.stringValue() == "hello")
+            case None => @Assert(false)
+        }
+    }
+
+    @TestCase
+    func parseNestedObject() {
+        let r = parseJson(#"{"outer": {"inner": [1, 2]}}"#)
+        @Assert(r.ok)
+        let outer = r.value.getOrThrow()
+        match (outer.get("outer")) {
+            case Some(innerObj) =>
+                match (innerObj.get("inner")) {
+                    case Some(arr) =>
+                        @Assert(arr.arrayItems().size == 2)
+                    case None => @Assert(false)
+                }
+            case None => @Assert(false)
+        }
+    }
+
+    @TestCase
+    func parseWhitespace() {
+        let r = parseJson(#"  {  "a"  :  1  }  "#)
+        @Assert(r.ok)
+    }
+
+    @TestCase
+    func parseErrorUnexpected() {
+        let r = parseJson("invalid")
+        @Assert(!r.ok)
+    }
+
+    @TestCase
+    func parseErrorTrailing() {
+        let r = parseJson("123 456")
+        @Assert(!r.ok)
+    }
+
+    @TestCase
+    func parseErrorUnclosedArray() {
+        let r = parseJson("[1, 2")
+        @Assert(!r.ok)
+    }
+
+    @TestCase
+    func parseErrorUnclosedObject() {
+        let r = parseJson(#"{"a": 1"#)
+        @Assert(!r.ok)
+    }
+
+    @TestCase
+    func displayNull() {
+        @Assert(parseJson("null").value.getOrThrow().display() == "null")
+    }
+
+    @TestCase
+    func displayBool() {
+        @Assert(parseJson("true").value.getOrThrow().display() == "true")
+        @Assert(parseJson("false").value.getOrThrow().display() == "false")
+    }
+
+    @TestCase
+    func displayNumber() {
+        @Assert(parseJson("42").value.getOrThrow().display() == "42")
+    }
+
+    @TestCase
+    func displayArray() {
+        let d = parseJson("[1, 2]").value.getOrThrow().display()
+        @Assert(d == "[1, 2]")
+    }
+}

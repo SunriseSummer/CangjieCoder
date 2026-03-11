@@ -1,0 +1,44 @@
+// JsonParser 演示入口
+package jsonparser
+
+main() {
+    // 解析一个完整的 JSON 对象
+    let input = #"{"name": "CangjieCoder", "version": 1, "features": ["mcp", "ast"], "active": true}"#
+    let result = parseJson(input)
+    if (result.ok) {
+        match (result.value) {
+            case Some(v) => println("Parsed: ${v.display()}")
+            case None => println("No value")
+        }
+    } else {
+        println("Error: ${result.error}")
+    }
+
+    // 解析嵌套结构
+    let nested = #"{"data": {"items": [1, 2, 3], "meta": null}}"#
+    let r2 = parseJson(nested)
+    if (r2.ok) {
+        match (r2.value) {
+            case Some(v) => println("Nested: ${v.display()}")
+            case None => println("No value")
+        }
+    }
+
+    // 解析各种基本类型
+    let rNull = parseJson("null")
+    println("null  => ${rNull.value.getOrThrow().display()}")
+    let rTrue = parseJson("true")
+    println("true  => ${rTrue.value.getOrThrow().display()}")
+    let rFalse = parseJson("false")
+    println("false => ${rFalse.value.getOrThrow().display()}")
+    let r42 = parseJson("42")
+    println("42    => ${r42.value.getOrThrow().display()}")
+    let rPi = parseJson("3.14")
+    println("3.14  => ${rPi.value.getOrThrow().display()}")
+    let rStr = parseJson(#""hello""#)
+    println("str   => ${rStr.value.getOrThrow().display()}")
+    let rArr = parseJson("[]")
+    println("[]    => ${rArr.value.getOrThrow().display()}")
+    let rObj = parseJson("{}")
+    println("{}    => ${rObj.value.getOrThrow().display()}")
+}
