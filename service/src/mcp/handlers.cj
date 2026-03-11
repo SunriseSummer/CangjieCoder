@@ -1,15 +1,15 @@
 // MCP 运行时、JSON-RPC 方法处理和 stdio 服务
 // 本模块是 MCP 服务的顶层入口，负责将 JSON-RPC 请求分发到对应的方法处理函数，
 // 管理工具注册表和运行时上下文，以及 stdio 帧级通信循环。
-package cangjiecoder
+package cangjiecoder.mcp
 
 import std.collection.*
 import std.env.*
+import std.fs.*
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.mcp.*
-import cangjiecoder.tools.*
+import cangjiecoder.workspace.*
 
 // POSIX write 系统调用声明（用于绕过仓颉 ConsoleWriter 的管道缓冲问题）
 foreign func write(fd: Int32, buf: CPointer<UInt8>, count: UIntNative): IntNative
@@ -55,8 +55,22 @@ func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
 // MCP 方法处理函数类型：接收运行时、请求 id、参数，返回 JSON-RPC 响应字符串
 type McpMethodHandler = (McpRuntime, String, JsonObject) -> String
 
-// 处理 initialize 请求：返回服务器能力声明和标识信息
-func handleInitialize(_: McpRuntime, idJson: String, _: JsonObject): String {
+// 处理 initialize 请求：返回服务器能力声明和标识信息。
+// 同时从客户端参数中提取 roots 信息，自动设置工作区路径。
+func handleInitialize(runtime: McpRuntime, idJson: String, params: JsonObject): String {
+    // 从客户端 initialize 参数中提取 roots，自动设置工作区路径
+    if (!runtime.hasExplicitRepo) {
+        if (let Some(rootPath) <- extractFirstRootPath(params)) {
+            if (isDirectory(rootPath)) {
+                try {
+                    runtime.workspaceRoot = canonicalize(rootPath).toString()
+                } catch (_: Exception) {
+                    // canonicalize 失败（权限问题等），保持默认工作区
+                }
+            }
+        }
+    }
+
     let result = JsonObject()
     // 声明支持的能力：工具调用、提示词、资源访问
     let capabilities = JsonObject()
@@ -87,20 +101,40 @@ func handleToolsList(_: McpRuntime, idJson: String, _: JsonObject): String {
     return jsonRpcResult(idJson, toolDefinitionsJson())
 }
 
-// 处理 tools/call 请求：解析工具名和参数，调度到具体的工具处理函数
+// 处理 tools/call 请求：解析工具名和参数，调度到具体的工具处理函数。
+// 支持 workspacePath 参数覆盖工作区路径，以及 workspace.set_root/get_root 动态管理工作区。
 func handleToolsCall(runtime: McpRuntime, idJson: String, params: JsonObject): String {
     let toolName = jsonField(params, "name")
     let toolArgs = match (params.get("arguments")) {
         case Some(value) => value.asObject()
         case None => JsonObject()
     }
-    let ctx = McpToolContext(runtime.workspaceRoot, runtime.serviceRoot)
+
+    // workspace.set_root：动态设置会话级工作区根目录
+    if (toolName == "workspace.set_root") {
+        let (newRoot, toolResult) = workspaceSetRootJson(jsonField(toolArgs, "path"))
+        if (!newRoot.isEmpty()) {
+            runtime.workspaceRoot = newRoot
+        }
+        return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
+    }
+
+    // workspace.get_root：查询当前工作区根目录
+    if (toolName == "workspace.get_root") {
+        let toolResult = workspaceGetRootJson(runtime.workspaceRoot)
+        return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
+    }
+
+    // 支持 workspacePath 参数覆盖当前调用的工作区路径
+    let effectiveWorkspaceRoot = resolveEffectiveWorkspaceRoot(runtime.workspaceRoot, toolArgs)
+
+    let ctx = McpToolContext(effectiveWorkspaceRoot, runtime.serviceRoot)
     let toolResult = callMcpTool(runtime.toolRegistry, ctx, toolName, toolArgs)
     return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
 }
 
 // 构建 JSON-RPC 方法注册表，映射方法名到处理函数
-func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
+public func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
     let registry = HashMap<String, McpMethodHandler>()
     registry["initialize"] = handleInitialize
     registry["ping"] = handlePing
@@ -114,15 +148,17 @@ func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
 
 // MCP 服务运行时：维护工作区路径、方法注册表和工具注册表，
 // 负责接收和分发 JSON-RPC 请求
-class McpRuntime {
-    public let workspaceRoot: String      // 用户工作区根目录
+public class McpRuntime {
+    public var workspaceRoot: String      // 用户工作区根目录（可通过 initialize roots 或 set_root 动态修改）
     public let serviceRoot: String        // 服务自身所在目录（用于定位内置资源）
+    public let hasExplicitRepo: Bool      // 是否通过 --repo 显式指定了工作区
     let methodRegistry: HashMap<String, McpMethodHandler>
     public let toolRegistry: HashMap<String, McpToolHandler>
 
-    public init(workspaceRoot: String, serviceRoot!: String = "") {
+    public init(workspaceRoot: String, serviceRoot!: String = "", hasExplicitRepo!: Bool = false) {
         this.workspaceRoot = workspaceRoot
         this.serviceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
+        this.hasExplicitRepo = hasExplicitRepo
         this.methodRegistry = buildMcpMethodRegistry()
         this.toolRegistry = buildMcpToolRegistry()
     }
@@ -161,7 +197,7 @@ class McpRuntime {
 // ── stdio 服务循环 ───────────────────────────────────
 
 // 启动 MCP stdio 服务：循环读取 stdin 帧 → 处理请求 → 写回响应帧
-func startMcpStdioServer(runtime: McpRuntime): Unit {
+public func startMcpStdioServer(runtime: McpRuntime): Unit {
     let reader = getStdIn()
     while (true) {
         match (readStdioFrame(reader)) {
@@ -180,7 +216,9 @@ func startMcpStdioServer(runtime: McpRuntime): Unit {
 // ── 工厂函数 ─────────────────────────────────────────
 
 // 创建 MCP 运行时实例，serviceRoot 默认等于 workspaceRoot
-func createMcpRuntime(workspaceRoot: String, serviceRoot!: String = ""): McpRuntime {
+public func createMcpRuntime(workspaceRoot: String, serviceRoot!: String = "",
+                      hasExplicitRepo!: Bool = false): McpRuntime {
     let effectiveServiceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
-    return McpRuntime(workspaceRoot, serviceRoot: effectiveServiceRoot)
+    return McpRuntime(workspaceRoot, serviceRoot: effectiveServiceRoot,
+        hasExplicitRepo: hasExplicitRepo)
 }

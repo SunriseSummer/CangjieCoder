@@ -8,7 +8,6 @@ import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.mcp.*
 import cangjiecoder.skills.*
-import cangjiecoder.tools.*
 import cjtreesitter.*
 import stdx.encoding.json.*
 

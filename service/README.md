@@ -12,13 +12,13 @@
 service/
 ├── cjpm.toml       # 项目配置（依赖 cangjie-tree-sitter 库）
 ├── src/
-│   ├── analysis/   # 代码分析与 AST 编辑（依赖外部 tree-sitter CLI）
-│   ├── common/     # 共享类型与工具函数
+│   ├── analysis/   # 代码分析、AST 编辑与 AST/分析工具处理函数
+│   ├── common/     # 共享类型（AppConfig、McpToolContext、McpToolHandler）与工具函数
 │   ├── json/       # JSON 解析与序列化工具
-│   ├── lsp/        # LSP 协议、会话管理与查询
-│   ├── mcp/        # MCP 协议层（工具定义、帧编解码）
-│   ├── skills/     # 技能注册表
-│   └── tools/      # MCP 工具处理函数（按类别拆分）
+│   ├── lsp/        # LSP 协议、会话管理、查询与 LSP 工具处理函数
+│   ├── mcp/        # MCP 协议层（工具定义、帧编解码、运行时、请求调度、工具注册表）
+│   ├── skills/     # 技能注册表与技能搜索工具处理函数
+│   └── workspace/  # 工作区管理（根目录管理、文件操作、命令执行）
 └── README.md
 ```
 
@@ -51,10 +51,17 @@ cjpm test
 
 ```bash
 cd service
-cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
+cjpm run --run-args "mcp-stdio"
 ```
 
-`--repo` 指向要被分析/修改/构建/测试的目标仓库；如果省略，则默认作用于 `service` 当前目录。
+工作区路径支持多种设置方式（按优先级从高到低）：
+
+1. **MCP 客户端自动提供**：VS Code / Cursor 等客户端在 `initialize` 请求中自动发送 roots，服务端自动获取工作区路径
+2. **AI 主动设置**：AI 调用 `workspace.set_root` 工具在会话中动态切换工作区
+3. **启动参数指定**：`--repo /absolute/path/to/workspace` 显式指定目标仓库
+4. **默认当前目录**：如果以上均未设置，则使用当前工作目录
+
+此外，任何工具调用都可以通过 `workspacePath` 参数临时覆盖工作区路径（仅对当前调用生效）。
 
 ## MCP 工具列表
 
@@ -79,6 +86,13 @@ cjpm run --run-args "mcp-stdio --repo /absolute/path/to/workspace"
 | `workspace.run_test` | 在工作区中运行 `cjpm test` |
 | `workspace.run_command` | 运行受限白名单命令 |
 | `workspace.rollback` | 回滚所有文件修改到编辑前状态 |
+
+### 工作区管理
+
+| 工具名 | 说明 |
+|--------|------|
+| `workspace.set_root` | 动态设置会话级工作区根目录 |
+| `workspace.get_root` | 查询当前工作区根目录 |
 
 ### Cangjie 分析与 AST
 

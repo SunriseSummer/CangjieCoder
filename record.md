@@ -683,3 +683,205 @@ return ensureWorkspacePath(repoRoot, path) ?? repoRoot
 - `test_skills_enhanced.py` — 工具总数断言更新为 24
 
 **测试汇总**：217 个 Cangjie 测试 + 141 个 Python 集成测试全部通过
+
+### 8. 动态工作区路径管理（Issue #8）
+
+#### 8.1 问题分析
+
+**原始问题**：MCP 服务启动时必须通过 `--repo` 参数指定目标仓库工作目录。这在将服务接入 VS Code / Cursor / OpenCode 等主流 AI 工具时存在不便——用户需要在 MCP 配置文件中硬编码项目路径，切换项目需要修改配置并重启服务。
+
+**核心诉求**：
+- AI 侧能否主动传入工作路径？
+- MCP 服务侧能否主动获取工作路径？
+
+#### 8.2 方案分析与对比
+
+我们评估了以下五种获取项目工作目录的方式，最终采用"多级回退"组合策略：
+
+| 方式 | 原理 | 优点 | 缺点 | 是否采用 |
+|------|------|------|------|---------|
+| **`--repo` 启动参数** | 服务启动时通过命令行传入 | 简单直接；用户意图明确 | 需要硬编码路径；切换项目必须重启 | ✅ 保留（作为最后兜底） |
+| **MCP `initialize` roots** | MCP 客户端在握手时自动发送工作区 URI | 零配置；客户端自动提供；符合 MCP 协议规范 | 依赖客户端支持 roots 能力；不是所有客户端都支持 | ✅ 新增 |
+| **`workspace.set_root` 工具** | AI 通过工具调用动态设置工作区 | 灵活；AI 主动控制；支持会话内切换项目 | 需要 AI 额外调用一次工具 | ✅ 新增 |
+| **`workspacePath` 工具参数** | 每次工具调用可附加临时工作区覆盖 | 最灵活；可跨项目操作；不影响全局状态 | 冗余：每次调用都要传；不适合常规使用 | ✅ 新增 |
+| **环境变量** | 通过 `CANGJIECODER_WORKSPACE` 等环境变量 | 与 CI/CD 集成方便；启动前设定 | 不够灵活；不能会话内动态切换 | ❌ 未采用（收益不明显） |
+
+**选择理由**：
+
+1. **`initialize` roots 是最推荐的方式**。它是 MCP 协议的标准能力，VS Code / Cursor 等主流客户端在连接 MCP 服务器时自动发送 roots 信息，服务端无需任何额外配置即可正确获取工作区路径。用户只需要配置一次 MCP 服务器（不含 `--repo`），就能在任何项目中自动工作。
+
+2. **`workspace.set_root` 是最重要的补充**。当客户端不支持 roots（例如 OpenCode 的某些版本），或者需要在会话中动态切换项目时，AI 可以主动调用此工具。这是"AI 侧主动传入工作路径"的直接实现。
+
+3. **`workspacePath` 参数提供了最大灵活性**。它不改变全局状态，适合临时跨项目查看文件的场景。但在日常使用中很少需要。
+
+4. **未采用环境变量方式**。因为 `initialize` roots 和 `workspace.set_root` 已经覆盖了所有动态场景，环境变量仅在启动前有效，和 `--repo` 的能力重叠，额外收益不大。
+
+**优先级设计**（从高到低）：
+
+```
+workspacePath 参数（单次覆盖）> workspace.set_root（会话级）> initialize roots（自动检测）> --repo（启动参数）> cwd（兜底）
+```
+
+这个优先级确保：显式的临时覆盖 > 显式的会话级设置 > 自动检测 > 启动时默认值。当 `--repo` 被显式指定时，`initialize` roots 不会覆盖它（尊重用户的显式意图）。
+
+#### 8.3 实现要点
+
+**核心变更**（`service/src/mcp_handlers.cj`）：
+
+- `McpRuntime.workspaceRoot` 从 `let`（不可变）改为 `var`（可变），支持会话中动态修改
+- `McpRuntime.hasExplicitRepo` 新增字段，记录用户是否通过 `--repo` 显式指定了工作区
+- `handleInitialize()` 增加 roots 解析逻辑：从 `params.roots[0].uri` 提取 `file://` URI 并转换为本地路径
+- `handleToolsCall()` 增加三层调度：
+  1. 拦截 `workspace.set_root` → 直接修改 `runtime.workspaceRoot`
+  2. 拦截 `workspace.get_root` → 返回当前 `workspaceRoot`
+  3. 通用路径：调用 `resolveEffectiveWorkspaceRoot()` 检查 `workspacePath` 参数覆盖
+
+**新增工具**：
+- `workspace.set_root`：验证路径（绝对路径 + 目录存在 + canonicalize）后更新 `runtime.workspaceRoot`
+- `workspace.get_root`：返回当前 `workspaceRoot`
+
+**新增辅助函数**：
+- `extractFirstRootPath(params)`：从 initialize 参数解析 roots
+- `fileUriToPath(uri)`：将 `file:///path` URI 转换为 `/path`
+- `resolveEffectiveWorkspaceRoot(default, args)`：检查 `workspacePath` 参数
+- `isDirectory(path)`：通过 `Directory.isEmpty()` 检查路径是否为目录
+
+**安全保障**：
+- `workspace.set_root` 和 `workspacePath` 都要求绝对路径且目录必须存在
+- 所有文件操作仍通过 `ensureWorkspacePath()` 进行防逃逸检查
+- 无效的 `workspacePath` 静默回退到默认工作区（不中断工具调用）
+
+#### 8.4 客户端配置简化
+
+**优化前**（需要硬编码 `--repo`）：
+```json
+{
+  "args": ["mcp-stdio", "--repo", "/absolute/path/to/workspace"]
+}
+```
+
+**优化后**（无需指定 `--repo`，客户端自动提供工作区）：
+```json
+{
+  "args": ["mcp-stdio"]
+}
+```
+
+#### 8.5 新增测试
+
+**Cangjie 单元测试**（`workspace_root_test.cj`，18 个测试用例）：
+- `getRootReturnsCurrentWorkspace` — 验证 `get_root` 返回当前工作区
+- `setRootUpdatesWorkspace` — 验证 `set_root` 更新 `runtime.workspaceRoot`
+- `setRootRejectsEmptyPath` — 验证空路径被拒绝
+- `setRootRejectsRelativePath` — 验证相对路径被拒绝
+- `setRootRejectsNonexistentPath` — 验证不存在的路径被拒绝
+- `setRootPersistsAcrossToolCalls` — 验证设置后对后续调用持久生效
+- `initializeWithRootsUpdatesWorkspace` — 验证 initialize roots 自动设置工作区
+- `initializeWithExplicitRepoIgnoresRoots` — 验证 `--repo` 指定时 roots 不覆盖
+- `initializeWithoutRootsKeepsDefault` — 验证无 roots 时保持默认值
+- `initializeWithInvalidRootPathKeepsDefault` — 验证无效 root 路径时保持默认值
+- `workspacePathOverridesDefaultRoot` — 验证 `workspacePath` 参数临时覆盖
+- `workspacePathIgnoresInvalidPath` / `workspacePathIgnoresRelativePath` — 验证无效路径处理
+- `fileUriToPathParsesStandardUri` / `fileUriToPathRejectsNonFileUri` / `fileUriToPathRejectsEmptyString` — URI 解析
+- `toolDefinitionsIncludeSetAndGetRoot` / `toolRegistryIncludesSetAndGetRoot` — 工具注册验证
+
+**测试汇总**：235 个 Cangjie 测试全部通过
+
+#### 8.6 代码架构重构
+
+根据代码检视意见，对工作区管理代码进行了架构重构：
+
+**新增 `cangjiecoder.workspace` 包**（`service/src/workspace/`）：
+
+| 文件 | 职责 |
+|------|------|
+| `helpers.cj` | 工作区路径辅助函数：`isDirectory`、`fileUriToPath`、`extractFirstRootPath`、`resolveEffectiveWorkspaceRoot` |
+| `root_manager.cj` | 工作区根目录管理业务逻辑：`workspaceSetRootJson`、`workspaceGetRootJson`、`handleWorkspaceRootPlaceholder` |
+| `files.cj` | 工作区文件操作工具处理函数：read/list/search/replace/create/rollback |
+| `commands.cj` | 工作区命令执行工具处理函数：run_build/run_test/run_command |
+
+**`mcp_handlers.cj` → `mcp/handlers.cj`**：
+- 移入 `cangjiecoder.mcp` 包，与 `protocol.cj` 同包
+- 职责明确：纯粹的 MCP 协议请求调度（JSON-RPC 方法处理、工具调度、stdio 服务循环）
+- 不再混入工作区管理的具体业务逻辑
+
+**共享类型上提**：
+- `McpToolContext` 和 `McpToolHandler` 从 `cangjiecoder.tools` 移至 `cangjiecoder.common`
+- 解决了 `cangjiecoder.tools` ↔ `cangjiecoder.workspace` 的循环依赖问题
+
+**删除旧文件**：
+- `service/src/mcp_handlers.cj`（已拆分到 `mcp/handlers.cj` + `workspace/`）
+- `service/src/tools/workspace.cj`（已拆分到 `workspace/files.cj` + `workspace/commands.cj`）
+
+**依赖关系**（无循环）：
+```
+cangjiecoder.common  ← 共享类型（McpToolContext, McpToolHandler, AppConfig）
+    ↑        ↑
+cangjiecoder.workspace    cangjiecoder.tools
+    ↑                         ↑
+    └─────── cangjiecoder.mcp ┘
+```
+
+#### 8.7 删除 tools 目录，工具处理函数回归领域包
+
+按检视意见彻底删除 `service/src/tools/` 目录，各工具处理函数移入其所属的领域包，MCP 工具注册表移入 `mcp/` 目录。
+
+**变更明细**：
+
+| 原文件 | 目标文件 | 说明 |
+|--------|----------|------|
+| `tools/skills.cj` | `skills/handlers.cj` | 技能搜索工具处理函数（search/batch_search/prompt_context） |
+| `tools/ast.cj` | `analysis/handlers.cj` | AST 解析/查询/编辑和代码分析工具处理函数 |
+| `tools/lsp.cj` + `tools/types.cj` | `lsp/handlers.cj` | LSP 查询工具处理函数（status/probe/symbols/definition）和 lspQueryToolResult |
+| `tools/registry.cj` | `mcp/registry.cj` | MCP 工具注册表（buildMcpToolRegistry），与 protocol.cj 和 handlers.cj 同包 |
+| `json/serializers.cj` | 各领域包 | 领域 JSON 序列化函数移入各自的包（消除 json↔领域包循环依赖） |
+
+**领域 JSON 序列化迁移**：
+- `skillsJson()` → `skills/handlers.cj` 中的 `skillsResultToJson()`
+- `analysisJson()` → `analysis/handlers.cj` 中的 `analysisResultToJson()`
+- `lspStatusJson()` / `lspProbeJson()` / `lspQueryJson()` → `lsp/handlers.cj` 中的 `lspStatusToJson()` / `lspProbeToJson()` / `lspQueryToJson()`
+
+**新增辅助函数**：
+- `analysis/analyzer.cj` 新增 `analysisWorkspaceRelativePath()`（子包内部工作区相对路径计算）
+
+**删除文件**：
+- `service/src/tools/`（整个目录）
+- `service/src/json/serializers.cj`（内容已分散到各领域包）
+
+**最终目录结构**（每个目录职责明确）：
+```
+service/src/
+├── analysis/    → 代码分析 + AST/分析工具处理函数
+├── common/      → 共享类型与工具函数
+├── json/        → JSON 解析与通用序列化工具
+├── lsp/         → LSP 协议/会话/查询 + LSP 工具处理函数
+├── mcp/         → MCP 协议 + 运行时 + 工具注册表
+├── skills/      → 技能注册表 + 技能搜索工具处理函数
+└── workspace/   → 工作区管理 + 文件/命令工具处理函数
+```
+
+**依赖关系**（无循环）：
+```
+cangjiecoder.common  ← 共享类型（McpToolContext, McpToolHandler, AppConfig）
+    ↑    ↑    ↑    ↑
+skills analysis lsp workspace   ← 各领域包（含工具处理函数）
+    ↑      ↑     ↑     ↑
+    └──── cangjiecoder.mcp ────┘  ← MCP 协议 + 注册表（汇聚所有处理函数）
+```
+
+**测试汇总**：235 个 Cangjie 测试全部通过
+
+#### 8.8 Python 测试同步更新
+
+同步更新 `tests/` 下的 Python MCP 集成测试：
+
+- 更新工具清单计数：24 → 26（新增 `workspace.set_root` 和 `workspace.get_root`）
+- `test_tools_inventory.py` — 新增 `has_workspace_set_root` 和 `has_workspace_get_root` 检查
+- `test_skills_enhanced.py` — 更新 `tools_total_count` 期望值
+- 新增 `test_workspace_root.py` — 8 个测试用例：
+  - `get_root_returns_workspace` / `get_root_default_nonempty` — 查询默认工作区
+  - `set_root_valid_dir` / `set_root_returns_path` / `get_root_after_set` — 设置有效目录并验证
+  - `set_root_empty_fails` / `set_root_relative_fails` / `set_root_nonexistent_fails` — 输入验证
+- `run_all.py` — 注册 Workspace Root 测试模块
+
+**测试汇总**：235 个 Cangjie 测试 + 151 个 Python 测试全部通过

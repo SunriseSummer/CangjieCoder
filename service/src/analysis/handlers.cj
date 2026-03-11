@@ -1,23 +1,32 @@
-// AST 解析/查询/编辑工具 + 代码分析工具
-package cangjiecoder.tools
+// AST 解析/查询/编辑工具 + 代码分析工具处理函数
+package cangjiecoder.analysis
 
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
-import cangjiecoder.analysis.*
 import cjtreesitter.*
+
+// 将 AnalysisResult 序列化为 JSON 字符串
+func analysisResultToJson(result: AnalysisResult): String {
+    let root = JsonObject()
+    root.put("engine", JsonString(result.engine))
+    root.put("success", JsonBool(result.success))
+    root.put("summary", JsonString(result.summary))
+    root.put("output", JsonString(result.output))
+    return root.toString()
+}
 
 // 使用内置 tree-sitter 解析仓颉源码并返回 S-expression
 public func handleAstParse(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
-        let source = readTextFile(fullPath)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = analysisReadTextFile(fullPath)
         let sexp = parseSexp(source)
         if (sexp.startsWith("error:")) {
             return toolMessageJson(false, "AST parse failed", sexp)
         }
         let data = JsonObject()
-        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("path", JsonString(analysisWorkspaceRelativePath(ctx.workspaceRoot, fullPath)))
         data.put("sexp", JsonString(sexp))
         return toolResultJson(true, "AST parse completed", data: data)
     }
@@ -28,11 +37,11 @@ public func handleAstParse(ctx: McpToolContext, args: JsonObject): String {
 public func handleAstQueryNodes(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
     let nodeType = jsonField(args, "nodeType")
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
-        let source = readTextFile(fullPath)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = analysisReadTextFile(fullPath)
         let nodes = queryNodes(source, nodeType)
         let data = JsonObject()
-        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("path", JsonString(analysisWorkspaceRelativePath(ctx.workspaceRoot, fullPath)))
         data.put("nodeType", JsonString(nodeType))
         data.put("matchCount", JsonInt(nodes.size))
         data.put("nodes", JsonValue.fromStr(nodeInfoArrayToJson(nodes)))
@@ -45,11 +54,11 @@ public func handleAstQueryNodes(ctx: McpToolContext, args: JsonObject): String {
 public func handleAstListNodes(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
     let maxDepth = parseJsonIntField(args, "maxDepth", fallback: 4)
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
-        let source = readTextFile(fullPath)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = analysisReadTextFile(fullPath)
         let nodes = listNamedNodes(source, maxDepth: maxDepth)
         let data = JsonObject()
-        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("path", JsonString(analysisWorkspaceRelativePath(ctx.workspaceRoot, fullPath)))
         data.put("nodeCount", JsonInt(nodes.size))
         data.put("nodes", JsonValue.fromStr(nodeInfoArrayToJson(nodes)))
         return toolResultJson(true, "Listed ${nodes.size} named AST node(s)", data: data)
@@ -60,7 +69,7 @@ public func handleAstListNodes(ctx: McpToolContext, args: JsonObject): String {
 // 通过 tree-sitter 定位 AST 节点并替换
 public func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
     // 尝试备份，路径无效时安全跳过
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, jsonField(args, "path"))) {
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, jsonField(args, "path"))) {
         globalBackupStore.backup(fullPath)
     }
     let message = editAstNode(ctx.workspaceRoot,
@@ -75,7 +84,7 @@ public func handleEditAstNode(ctx: McpToolContext, args: JsonObject): String {
 // 运行 tree-sitter/cjlint/cjc 逐级分析
 public func handleAnalyzeFile(ctx: McpToolContext, args: JsonObject): String {
     let result = analyzeCangjieFile(ctx.workspaceRoot, jsonField(args, "path"))
-    let data = parseJsonObject(analysisJson(result))
+    let data = parseJsonObject(analysisResultToJson(result))
     return toolResultJson(result.success, result.summary, data: data)
 }
 
@@ -83,12 +92,12 @@ public func handleAnalyzeFile(ctx: McpToolContext, args: JsonObject): String {
 // 帮助 AI 快速理解文件结构，大幅节省 Token 消耗
 public func handleAstSummary(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
-        let source = readTextFile(fullPath)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = analysisReadTextFile(fullPath)
         let summaryText = astSummary(source)
         let summaryEntries = JsonValue.fromStr(astSummaryJson(source))
         let data = JsonObject()
-        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("path", JsonString(analysisWorkspaceRelativePath(ctx.workspaceRoot, fullPath)))
         data.put("summary", JsonString(summaryText))
         data.put("entries", summaryEntries)
         return toolResultJson(true, "AST summary completed", data: data)
@@ -101,8 +110,8 @@ public func handleAstSummary(ctx: McpToolContext, args: JsonObject): String {
 public func handleAstQueryNodesWithText(ctx: McpToolContext, args: JsonObject): String {
     let path = jsonField(args, "path")
     let nodeType = jsonField(args, "nodeType")
-    if (let Some(fullPath) <- ensureWorkspacePath(ctx.workspaceRoot, path)) {
-        let source = readTextFile(fullPath)
+    if (let Some(fullPath) <- analysisEnsureWorkspacePath(ctx.workspaceRoot, path)) {
+        let source = analysisReadTextFile(fullPath)
         let nodesWithText = queryNodesWithText(source, nodeType)
         let nodesArray = JsonArray()
         for ((node, text) in nodesWithText) {
@@ -114,7 +123,7 @@ public func handleAstQueryNodesWithText(ctx: McpToolContext, args: JsonObject): 
             nodesArray.add(item)
         }
         let data = JsonObject()
-        data.put("path", JsonString(workspaceRelativePath(ctx.workspaceRoot, fullPath)))
+        data.put("path", JsonString(analysisWorkspaceRelativePath(ctx.workspaceRoot, fullPath)))
         data.put("nodeType", JsonString(nodeType))
         data.put("matchCount", JsonInt(nodesWithText.size))
         data.put("nodes", nodesArray)

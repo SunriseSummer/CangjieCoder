@@ -17,8 +17,9 @@ def run_tests(client_factory):
     tool_names = [t["name"] for t in resp[0].get("tools", [])]
 
     tests = [
-        # Total count: should be exactly 24 after removing 3 project tools
-        ("total_tool_count_is_24", lambda: len(tool_names) == 24),
+        # Total count: 26 tools (3 skills + 6 workspace file/edit + 3 commands
+        # + 2 workspace mgmt + 1 analysis + 6 AST + 5 LSP)
+        ("total_tool_count_is_26", lambda: len(tool_names) == 26),
 
         # Skills tools (3)
         ("has_skills_search", lambda: "skills.search" in tool_names),
@@ -39,6 +40,10 @@ def run_tests(client_factory):
         ("has_workspace_run_build", lambda: "workspace.run_build" in tool_names),
         ("has_workspace_run_test", lambda: "workspace.run_test" in tool_names),
         ("has_workspace_run_command", lambda: "workspace.run_command" in tool_names),
+
+        # Workspace management tools (2)
+        ("has_workspace_set_root", lambda: "workspace.set_root" in tool_names),
+        ("has_workspace_get_root", lambda: "workspace.get_root" in tool_names),
 
         # Analysis tools (1)
         ("has_cangjie_analyze_file", lambda: "cangjie.analyze_file" in tool_names),

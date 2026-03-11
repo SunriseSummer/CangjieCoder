@@ -1,7 +1,12 @@
 // MCP 工具注册表：将工具名映射到处理函数
-package cangjiecoder.tools
+package cangjiecoder.mcp
 
 import std.collection.*
+import cangjiecoder.common.*
+import cangjiecoder.workspace.*
+import cangjiecoder.skills.*
+import cangjiecoder.analysis.*
+import cangjiecoder.lsp.*
 
 public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     let registry = HashMap<String, McpToolHandler>()
@@ -24,6 +29,10 @@ public func buildMcpToolRegistry(): HashMap<String, McpToolHandler> {
     registry["cangjie.lsp_definition"] = handleLspDefinition
     registry["cangjie.edit_ast_node"] = handleEditAstNode
     registry["workspace.rollback"] = handleRollback
+    // workspace.set_root 和 workspace.get_root 在 mcp/handlers.cj 的 handleToolsCall 中直接处理（需访问 McpRuntime），
+    // 此处注册占位处理函数以保持工具定义与注册表一致。
+    registry["workspace.set_root"] = handleWorkspaceRootPlaceholder
+    registry["workspace.get_root"] = handleWorkspaceRootPlaceholder
     registry["cangjie.ast_parse"] = handleAstParse
     registry["cangjie.ast_query_nodes"] = handleAstQueryNodes
     registry["cangjie.ast_list_nodes"] = handleAstListNodes

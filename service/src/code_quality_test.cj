@@ -9,7 +9,6 @@ import cangjiecoder.common.*
 import cangjiecoder.json.*
 import cangjiecoder.lsp.*
 import cangjiecoder.mcp.*
-import cangjiecoder.tools.*
 import stdx.encoding.json.*
 
 @Test
@@ -487,9 +486,9 @@ class McpProtocolExtendedTest {
 
     @TestCase
     func buildToolDefinitionsReturns22Tools() {
-        // 应注册恰好 24 个工具
+        // 应注册恰好 26 个工具
         let defs = buildToolDefinitions()
-        @Expect(defs.size, 24)
+        @Expect(defs.size, 26)
     }
 
     @TestCase

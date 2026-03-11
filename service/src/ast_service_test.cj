@@ -4,7 +4,6 @@ import std.env.*
 import std.fs.*
 import cangjiecoder.common.*
 import cangjiecoder.mcp.*
-import cangjiecoder.tools.*
 import cjtreesitter.*
 
 @Test
