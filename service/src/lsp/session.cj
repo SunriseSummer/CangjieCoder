@@ -193,7 +193,7 @@ public class LspSessionManager {
 
     // 确保 LSP 子进程已启动并完成 initialize 握手。
     // 当目标工作区变更时会先关闭旧进程再重新初始化。
-    func ensureInitialized(targetRepoRoot: String): Bool {
+    public func ensureInitialized(targetRepoRoot: String): Bool {
         if (initialized && repoRoot == targetRepoRoot) {
             return true
         }

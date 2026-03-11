@@ -28,7 +28,7 @@ MCP 工具链发现并修复这些问题。
   7. 测试迭代 — 首次测试失败 → 分析 → replace_text 修复 → 重测试
   8. LSP 工具 — status / probe / document_symbols / workspace_symbols / definition
 
-覆盖的 MCP 工具 (20 个):
+覆盖的 MCP 工具 (23 个):
   skills.batch_search, skills.prompt_context, skills.search,
   workspace.set_root, workspace.create_file (含 overwrite),
   workspace.list_files, workspace.read_file, workspace.search_text,
@@ -37,7 +37,8 @@ MCP 工具链发现并修复这些问题。
   cangjie.ast_summary, cangjie.ast_parse, cangjie.ast_list_nodes,
   cangjie.ast_query_nodes, cangjie.ast_query_nodes_with_text,
   cangjie.edit_ast_node,
-  cangjie.lsp_status, cangjie.lsp_document_symbols
+  cangjie.lsp_status, cangjie.lsp_probe, cangjie.lsp_document_symbols,
+  cangjie.lsp_workspace_symbols, cangjie.lsp_definition
 
 Usage:
     python tests/e2etest_taskmanager/run.py [--bin PATH] [--keep]
@@ -672,13 +673,17 @@ def run_e2e(service_bin, keep_workspace):
 
         # ==============================================================
         # 阶段 8 — LSP 工具: 验证语言服务器集成
-        # LSP 可能因环境缺少二进制而不可用，测试仅验证调用格式正确
+        # 覆盖所有 5 个 LSP 工具: status, probe, document_symbols,
+        # workspace_symbols, definition
         # ==============================================================
         step("阶段 8: LSP 工具 — 验证语言服务器集成")
 
-        agent_plan("LSP 功能探测", [
-            "lsp_status: 检查 LSP 二进制是否可用",
-            "lsp_document_symbols: 查询 types.cj 的符号",
+        agent_plan("LSP 全功能验证", [
+            "lsp_status: 检查 LSP 二进制发现机制（SDK/环境变量/PATH）",
+            "lsp_probe: 执行 initialize 握手探测（使用持久化会话）",
+            "lsp_document_symbols: 查询 types.cj 的文档符号",
+            "lsp_workspace_symbols: 在整个工作区搜索 'Task' 相关符号",
+            "lsp_definition: 查询符号定义位置",
             "注意: LSP 可能因环境缺少二进制而返回 ok=false，这是正常的",
         ])
 
@@ -686,21 +691,55 @@ def run_e2e(service_bin, keep_workspace):
         c.start()
         c.call_tool("workspace.set_root", {"path": workspace})
         c.call_tool("cangjie.lsp_status")                                      # 1
-        c.call_tool("cangjie.lsp_document_symbols", {                          # 2
+        c.call_tool("cangjie.lsp_probe")                                       # 2
+        c.call_tool("cangjie.lsp_document_symbols", {                          # 3
             "path": "src/types.cj"
+        })
+        c.call_tool("cangjie.lsp_workspace_symbols", {                         # 4
+            "query": "Task"
+        })
+        c.call_tool("cangjie.lsp_definition", {                                # 5
+            "path": "src/task.cj", "line": 6, "column": 14
         })
         resp = c.execute()
 
-        # LSP 工具验证: 只检查响应格式是否正确，不要求 ok=true
-        # （LSP 需要外部二进制，CI 环境中可能不可用）
-        record("ok" in resp[1], "lsp_status: 响应格式正确")
-        record("ok" in resp[2], "lsp_document_symbols: 响应格式正确")
+        # LSP 工具验证: 检查响应格式正确且包含预期字段
+        # LSP 需要外部二进制，CI 环境中可能不可用
+        lsp_status_data = resp[1].get("data", {})
+        record("ok" in resp[1] and "data" in resp[1], "lsp_status: 响应格式正确")
+        record("ok" in resp[2] and "data" in resp[2], "lsp_probe: 响应格式正确")
+        record("ok" in resp[3] and "data" in resp[3], "lsp_document_symbols: 响应格式正确")
+        record("ok" in resp[4] and "data" in resp[4], "lsp_workspace_symbols: 响应格式正确")
+        record("ok" in resp[5] and "data" in resp[5], "lsp_definition: 响应格式正确")
 
-        lsp_available = resp[1].get("ok") is True
-        agent_analyse(
-            f"LSP 状态: {'可用' if lsp_available else '不可用（环境缺少 LSP 二进制）'}。"
-            "\n     无论 LSP 是否可用，MCP 工具层都正确处理了请求和响应。"
-        )
+        lsp_available = lsp_status_data.get("available") is True
+        if lsp_available:
+            # LSP 二进制可用 — 验证功能性结果
+            agent_analyse(
+                f"LSP 二进制发现: {lsp_status_data.get('command', '?')}"
+                f"\n     probe 结果: ok={resp[2].get('ok')}"
+            )
+            record(resp[2].get("ok") is True, "lsp_probe: initialize 握手成功")
+
+            # workspace_symbols 应该返回 Task 相关符号
+            ws_result = resp[4].get("data", {}).get("result")
+            if ws_result and isinstance(ws_result, list) and len(ws_result) > 0:
+                symbol_names = [s.get("name", "") for s in ws_result]
+                record(any("Task" in n for n in symbol_names),
+                       "lsp_workspace_symbols: 找到 Task 相关符号")
+                agent_analyse(
+                    f"workspace_symbols 返回 {len(ws_result)} 个符号: "
+                    + ", ".join(symbol_names[:5])
+                )
+            else:
+                record(resp[4].get("ok") is True,
+                       "lsp_workspace_symbols: 请求成功（无符号数据）")
+                agent_analyse("workspace_symbols 请求成功但未返回符号数据。")
+        else:
+            agent_analyse(
+                f"LSP 状态: 不可用（环境缺少 LSP 二进制）。"
+                "\n     所有 5 个 LSP 工具的 MCP 层都正确处理了请求和响应。"
+            )
 
         # ==============================================================
         # 最终摘要
@@ -715,7 +754,8 @@ def run_e2e(service_bin, keep_workspace):
             "\n               ast_summary, ast_parse, ast_list_nodes,"
             "\n               ast_query_nodes, ast_query_nodes_with_text,"
             "\n               edit_ast_node,"
-            "\n               lsp_status, lsp_document_symbols"
+            "\n               lsp_status, lsp_probe, lsp_document_symbols,"
+            "\n               lsp_workspace_symbols, lsp_definition"
             "\n     迭代过程: 编译失败→修复 import→成功 / 测试失败→修复 @Derive→通过"
             "\n     AST 编辑: edit_ast_node 替换函数 → rollback 恢复"
         )
@@ -757,7 +797,7 @@ def main():
 
     print("=" * 64)
     print("  端到端测试: AI Agent 驱动 TaskManager 项目开发")
-    print("  (覆盖 AST 编辑、LSP、高级 Skill 查询)")
+    print("  (覆盖 AST 编辑、LSP 全 5 工具、高级 Skill 查询)")
     print("=" * 64)
 
     passed, failed, errors = run_e2e(args.bin, args.keep)

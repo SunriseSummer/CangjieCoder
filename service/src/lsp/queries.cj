@@ -40,6 +40,8 @@ public func buildLspInitializeParams(repoRoot!: ?String = None): JsonObject {
 }
 
 // 将多个 LSP JSON-RPC 消息编码成帧序列，写入进程 stdin 后读取全部 stdout/stderr。
+// 注意: 此函数在某些 LSP 实现中可能因 stdin 关闭导致响应丢失（参见 issue.md 问题 5）。
+// 主查询路径应优先使用 globalLspSession 持久化会话。
 // 返回 (解析后的 JSON body 数组, 标准错误输出)。
 public func runLspSession(command: String, repoRoot: String, messages: Array<String>): (Array<String>, String) {
     let process = launch(command,
@@ -165,50 +167,17 @@ public func queryLspDefinition(repoRoot: String, path: String, line: Int64, colu
 
 // ── LSP 探测 ─────────────────────────────────────────
 
-// 判断 LSP 响应是否包含有效的 initialize 结果
-func isSuccessfulInitializeResponse(body: String): Bool {
-    return body.contains("\"capabilities\"") ||
-        (body.contains("\"result\"") && !body.contains("\"error\""))
-}
-
-// 在 LSP 响应列表中查找成功的 initialize 应答
-func findSuccessfulProbeResponse(bodies: Array<String>): ?String {
-    for (body in bodies) {
-        if (isSuccessfulInitializeResponse(body)) {
-            return body
-        }
-    }
-    return None
-}
-
-// LSP 探测：仅执行 initialize → shutdown 以验证 LSP 二进制是否可正常启动和通信
+// LSP 探测：通过持久化会话管理器执行 initialize 握手，
+// 验证 LSP 二进制是否可正常启动和通信。
 public func probeLspServer(repoRoot: String): LspProbeResult {
     if (let Some(command) <- resolveLspCommand(repoRoot)) {
-        try {
-            let messages = [
-                buildLspRequest(1, "initialize", buildLspInitializeParams()),
-                buildLspNotification("initialized", JsonObject()),
-                buildLspRequest(2, "shutdown", JsonNull()),
-                buildLspNotification("exit", JsonNull())
-            ]
-            let (bodies, stderr) = runLspSession(command, repoRoot, messages)
-            // 查找成功的 initialize 响应
-            if (let Some(body) <- findSuccessfulProbeResponse(bodies)) {
-                return LspProbeResult(true, true, command,
-                    "LSP initialize probe succeeded.", lspShortPreview(body, maxLines: 12))
-            }
-            if (!bodies.isEmpty()) {
-                return LspProbeResult(true, false, command,
-                    "LSP probe returned JSON-RPC responses, but initialize did not succeed cleanly.",
-                    lspShortPreview(bodies[0], maxLines: 12))
-            }
-            return LspProbeResult(true, false, command,
-                "LSP probe produced no parseable JSON-RPC response.",
-                lspShortPreview(stderr, maxLines: 12))
-        } catch (e: Exception) {
-            return LspProbeResult(true, false, command,
-                "LSP probe failed.", lspShortPreview(e.toString(), maxLines: 12))
+        // 使用持久化会话管理器尝试初始化，它内部已实现交互式帧读写
+        if (globalLspSession.ensureInitialized(repoRoot)) {
+            return LspProbeResult(true, true, command,
+                "LSP initialize probe succeeded.", "Session initialized successfully.")
         }
+        return LspProbeResult(true, false, command,
+            "LSP probe: binary found but initialize handshake did not succeed.", "")
     }
     return LspProbeResult(false, false, "", "No Cangjie LSP binary was detected for probing.", "")
 }

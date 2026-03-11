@@ -235,7 +235,48 @@ AST 节点坐标。这与其他所有 AST 工具（`ast_parse`、`ast_query_node
 
 ---
 
-## 问题 5：Agent E2E 测试环境依赖
+## 问题 5：lsp_probe 冷启动模式下 LSP 服务器响应丢失（已修复）
+
+### 现象
+
+`cangjie.lsp_probe` 工具在有 LSPServer 二进制可用的环境中仍返回失败:
+```json
+{
+  "ok": false,
+  "summary": "LSP probe returned JSON-RPC responses, but initialize did not succeed cleanly.",
+  "data": {
+    "responsePreview": "{\"error\":{\"code\":-32002,\"message\":\"server not initialized\"},\"id\":2,\"jsonrpc\":\"2.0\"}"
+  }
+}
+```
+
+### 原因
+
+`probeLspServer()` 使用 `runLspSession()` 冷启动方式：将全部消息（initialize → initialized →
+shutdown → exit）一次性写入子进程 stdin，然后通过 `waitOutput()` 关闭 stdin 并读取所有 stdout。
+
+问题在于 `waitOutput()` 关闭 stdin 后，LSP 服务器收到 EOF 会提前退出，
+导致 initialize 响应在写入 stdout 之前就被丢弃。最终只能收到 shutdown 请求的
+`"server not initialized"` 错误（因为 initialize 尚未完成时 shutdown 就被处理了）。
+
+这是一个**时序竞争问题**: 批量写入时，LSP 服务器同时收到所有消息，但处理 initialize
+是异步的，而 exit 通知立即触发进程退出。
+
+### 修复
+
+将 `probeLspServer()` 改为使用 `globalLspSession.ensureInitialized()` 持久化会话管理器。
+该管理器已实现交互式帧读写：发送 initialize → 逐帧读取直到收到 id 匹配的响应 → 发送 initialized。
+完美解决了时序竞争问题。
+
+同时将 `LspSessionManager.ensureInitialized()` 的可见性从 `func` 改为 `public func`，
+使其可以被 `probeLspServer()` 直接调用。
+
+注意: `runLspSession()` 的冷启动批量发送方式仍保留作为 `runLspRequestColdStart()` 的兜底，
+但主查询路径 `runLspRequest()` 已优先使用持久化会话，所以此问题对主流程无影响。
+
+---
+
+## 问题 6：Agent E2E 测试环境依赖
 
 ### 现象
 
