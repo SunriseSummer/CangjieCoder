@@ -8,6 +8,7 @@ import std.convert.*
 import std.env.*
 import std.fs.*
 import std.process.*
+import cjtreesitter.*
 
 // ── 数据类型 ───────────────────────────────────────────
 
@@ -121,7 +122,8 @@ public func offsetForPoint(text: String, line: Int64, column: Int64): ?Int64 {
 
 // ── AST 节点编辑 ─────────────────────────────────────
 
-// 通过 tree-sitter 定位指定类型的 AST 节点并替换其内容。
+// 通过内置 tree-sitter FFI 定位指定类型的 AST 节点并替换其内容。
+// 使用 queryNodes() 获取节点的字节偏移范围，无需外部 CLI 工具。
 // index 用于在多个匹配中选择目标节点（0-based）。
 public func editAstNode(repoRoot: String,
                  path: String,
@@ -129,44 +131,41 @@ public func editAstNode(repoRoot: String,
                  replacement: String,
                  index!: Int64 = 0): String {
     if (let Some(fullPath) <- analysisEnsureWorkspacePath(repoRoot, path)) {
-        let treeSitterCommand = getVariable("TREE_SITTER_CANGJIE") ?? "tree-sitter"
-        let (ok, stdout, stderr) = analysisRunCommand(treeSitterCommand, ["parse", fullPath], repoRoot)
-        if (!ok) {
-            return "tree-sitter unavailable for AST edit: ${analysisShortPreview(stderr, maxLines: 8)}"
-        }
-        let matches = parseTreeSitterNodeMatches(stdout, nodeType)
-        if (matches.isEmpty()) {
+        let source = analysisReadTextFile(fullPath)
+        let nodes = queryNodes(source, nodeType)
+        if (nodes.isEmpty()) {
             return "No AST node matched type ${nodeType}"
         }
-        if (index < 0 || index >= matches.size) {
-            return "AST node index ${index} is out of range; matched ${matches.size} nodes"
+        if (index < 0 || index >= nodes.size) {
+            return "AST node index ${index} is out of range; matched ${nodes.size} nodes"
         }
 
-        // 定位目标节点的字节范围并执行替换
-        let target = matches[index]
-        let current = analysisReadTextFile(fullPath)
-        if (let Some(startOffset) <- offsetForPoint(current, target.startLine, target.startColumn) &&
-            let Some(endOffset) <- offsetForPoint(current, target.endLine, target.endColumn)) {
-            let bytes = current.toArray()
-            let updatedBytes = ArrayList<Byte>()
-            updatedBytes.add(all: bytes.slice(0, startOffset))
-            updatedBytes.add(all: replacement.toArray())
-            updatedBytes.add(all: bytes.slice(endOffset, bytes.size - endOffset))
-            analysisWriteTextFile(fullPath, String.fromUtf8(updatedBytes.toArray()))
-            return "updated AST node ${nodeType} at ${path}:${target.startLine}:${target.startColumn}"
+        let target = nodes[index]
+        let bytes = source.toArray()
+        let startOffset = Int64(target.startByte)
+        let endOffset = Int64(target.endByte)
+
+        if (startOffset < 0 || endOffset > bytes.size || startOffset >= endOffset) {
+            return "AST node byte offset out of range at ${path}"
         }
-        return "AST node coordinate out of range at ${path}"
+
+        let updatedBytes = ArrayList<Byte>()
+        updatedBytes.add(all: bytes[0..startOffset])
+        updatedBytes.add(all: replacement.toArray())
+        updatedBytes.add(all: bytes[endOffset..bytes.size])
+        analysisWriteTextFile(fullPath, String.fromUtf8(updatedBytes.toArray()))
+        return "updated AST node ${nodeType} at ${path}:${target.startRow}:${target.startColumn}"
     }
     return "Path does not exist or escapes repository root: ${path}"
 }
 
 // 判断 AST 编辑结果是否成功（不包含任何已知错误前缀）
 public func astEditSucceeded(message: String): Bool {
-    return !message.startsWith("tree-sitter unavailable") &&
-        !message.contains("No AST node matched") &&
+    return !message.contains("No AST node matched") &&
         !message.contains("Path does not exist") &&
         !message.contains("escapes repository root") &&
-        !message.contains("AST node coordinate out of range")
+        !message.contains("AST node byte offset out of range") &&
+        !message.contains("AST node index")
 }
 
 // ── 逐级分析 ─────────────────────────────────────────

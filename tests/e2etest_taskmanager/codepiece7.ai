@@ -1,0 +1,12 @@
+    // 任务摘要 — AST edit 重构版: 增加了标签显示
+    public func summary(): String {
+        var tagStr = ""
+        if (!tags.isEmpty()) {
+            let parts = ArrayList<String>()
+            for (tag in tags) {
+                parts.add(tag)
+            }
+            tagStr = " [${String.join(parts.toArray(), delimiter: ", ")}]"
+        }
+        return "${title} [${priority.label()}] ${status.display()}${tagStr}"
+    }

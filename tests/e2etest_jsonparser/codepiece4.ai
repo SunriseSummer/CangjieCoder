@@ -1,0 +1,156 @@
+// JSON 递归下降解析器
+package jsonparser
+
+import std.collection.*
+
+// 解析结果
+public class ParseResult {
+    public let ok: Bool
+    public let value: ?JsonValue
+    public let error: String
+
+    init(ok: Bool, value: ?JsonValue, error: String) {
+        this.ok = ok
+        this.value = value
+        this.error = error
+    }
+
+    public static func success(v: JsonValue): ParseResult {
+        ParseResult(true, v, "")
+    }
+
+    public static func failure(msg: String): ParseResult {
+        ParseResult(false, None, msg)
+    }
+}
+
+// 递归下降 JSON 解析器
+public class JsonParser {
+    var lexer: JsonLexer
+    var current: Token
+
+    public init(input: String) {
+        lexer = JsonLexer(input)
+        current = lexer.nextToken()
+    }
+
+    func advance() {
+        current = lexer.nextToken()
+    }
+
+    func expect(kind: TokenKind): Bool {
+        if (current.kind == kind) {
+            advance()
+            return true
+        }
+        return false
+    }
+
+    // 解析入口
+    public func parse(): ParseResult {
+        let result = parseValue()
+        if (!result.ok) {
+            return result
+        }
+        if (current.kind != TokenKind.TEof) {
+            return ParseResult.failure("Unexpected content after JSON value")
+        }
+        return result
+    }
+
+    func parseValue(): ParseResult {
+        match (current.kind) {
+            case TNull =>
+                advance()
+                return ParseResult.success(JsonValue.ofNull())
+            case TTrue =>
+                advance()
+                return ParseResult.success(JsonValue.ofBool(true))
+            case TFalse =>
+                advance()
+                return ParseResult.success(JsonValue.ofBool(false))
+            case TNumber =>
+                let numStr = current.value
+                advance()
+                let num = Float64.parse(numStr)
+                return ParseResult.success(JsonValue.ofNumber(num))
+            case TString =>
+                let s = current.value
+                advance()
+                return ParseResult.success(JsonValue.ofString(s))
+            case LBracket => return parseArray()
+            case LBrace => return parseObject()
+            case TError =>
+                return ParseResult.failure(current.value)
+            case _ =>
+                return ParseResult.failure("Unexpected token: ${current.value}")
+        }
+    }
+
+    func parseArray(): ParseResult {
+        advance() // skip [
+        let items = ArrayList<JsonValue>()
+        if (current.kind == TokenKind.RBracket) {
+            advance()
+            return ParseResult.success(JsonValue.ofArray(items))
+        }
+        while (true) {
+            let elem = parseValue()
+            if (!elem.ok) { return elem }
+            match (elem.value) {
+                case Some(v) => items.add(v)
+                case None => return ParseResult.failure("Internal error: missing value")
+            }
+            if (current.kind == TokenKind.Comma) {
+                advance()
+            } else if (current.kind == TokenKind.RBracket) {
+                advance()
+                return ParseResult.success(JsonValue.ofArray(items))
+            } else {
+                return ParseResult.failure("Expected ',' or ']' in array")
+            }
+        }
+        return ParseResult.failure("Unexpected end of array")
+    }
+
+    func parseObject(): ParseResult {
+        advance() // skip {
+        let keys = ArrayList<String>()
+        let vals = ArrayList<JsonValue>()
+        if (current.kind == TokenKind.RBrace) {
+            advance()
+            return ParseResult.success(JsonValue.ofObject(keys, vals))
+        }
+        while (true) {
+            if (current.kind != TokenKind.TString) {
+                return ParseResult.failure("Expected string key in object")
+            }
+            let key = current.value
+            advance()
+            if (!expect(TokenKind.Colon)) {
+                return ParseResult.failure("Expected ':' after key")
+            }
+            let val = parseValue()
+            if (!val.ok) { return val }
+            keys.add(key)
+            match (val.value) {
+                case Some(v) => vals.add(v)
+                case None => return ParseResult.failure("Internal error: missing value")
+            }
+            if (current.kind == TokenKind.Comma) {
+                advance()
+            } else if (current.kind == TokenKind.RBrace) {
+                advance()
+                return ParseResult.success(JsonValue.ofObject(keys, vals))
+            } else {
+                return ParseResult.failure("Expected ',' or '}' in object")
+            }
+        }
+        return ParseResult.failure("Unexpected end of object")
+    }
+}
+
+// 便捷入口函数
+public func parseJson(input: String): ParseResult {
+    JsonParser(input).parse()
+}

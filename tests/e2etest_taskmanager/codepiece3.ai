@@ -1,0 +1,128 @@
+// 任务实体和存储管理
+package taskmanager
+
+import std.collection.*
+
+// 任务实体类
+public class Task {
+    public let title: String
+    public var priority: Priority
+    public var status: TaskStatus = TaskStatus.Pending
+    public var tags: ArrayList<String> = ArrayList<String>()
+
+    public init(title: String, priority!: Priority = Priority.Medium) {
+        this.title = title
+        this.priority = priority
+    }
+
+    // 标记任务完成
+    public func complete(): Unit {
+        status = TaskStatus.Done
+    }
+
+    // 取消任务
+    public func cancel(): Unit {
+        status = TaskStatus.Cancelled
+    }
+
+    // 添加标签（去重）
+    public func addTag(tag: String): Unit {
+        if (!tags.contains(tag)) {
+            tags.add(tag)
+        }
+    }
+
+    // 任务摘要（格式: "标题 [优先级] 状态"）
+    public func summary(): String {
+        return "${title} [${priority.label()}] ${status.display()}"
+    }
+}
+
+// 统计结果
+public struct TaskStats {
+    public TaskStats(
+        public let total: Int64,
+        public let done: Int64,
+        public let pending: Int64,
+        public let highPriority: Int64
+    ) {}
+}
+
+// 任务存储管理器
+public class TaskStore {
+    let tasks = ArrayList<Task>()
+
+    // 添加任务
+    public func add(task: Task): Unit {
+        tasks.add(task)
+    }
+
+    // 按标题查找任务
+    public func findByTitle(title: String): ?Task {
+        for (task in tasks) {
+            if (task.title == title) {
+                return task
+            }
+        }
+        return None
+    }
+
+    // 搜索包含关键字的任务
+    public func search(keyword: String): ArrayList<Task> {
+        let results = ArrayList<Task>()
+        for (task in tasks) {
+            if (task.title.contains(keyword)) {
+                results.add(task)
+            }
+        }
+        return results
+    }
+
+    // 按标题完成任务
+    public func complete(title: String): Bool {
+        for (task in tasks) {
+            if (task.title == title && !task.status.isTerminal()) {
+                task.complete()
+                return true
+            }
+        }
+        return false
+    }
+
+    // 获取统计信息
+    public func statistics(): TaskStats {
+        var done: Int64 = 0
+        var pending: Int64 = 0
+        var highPriority: Int64 = 0
+        for (task in tasks) {
+            match (task.status) {
+                case Done => done += 1
+                case Pending | InProgress => pending += 1
+                case _ => ()
+            }
+            if (task.priority >= Priority.High) {
+                highPriority += 1
+            }
+        }
+        return TaskStats(tasks.size, done, pending, highPriority)
+    }
+
+    // 任务总数
+    public prop count: Int64 {
+        get() { tasks.size }
+    }
+
+    // 列出全部任务摘要
+    public func listAll(): String {
+        var result = ""
+        var idx: Int64 = 0
+        for (task in tasks) {
+            if (idx > 0) {
+                result += "\n"
+            }
+            result += "${idx + 1}. ${task.summary()}"
+            idx += 1
+        }
+        return result
+    }
+}

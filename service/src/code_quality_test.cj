@@ -116,8 +116,9 @@ class AnalyzerExtendedTest {
 
     @TestCase
     func astEditSucceededRecognizesFailures() {
-        @Expect(!astEditSucceeded("tree-sitter unavailable for AST edit"))
         @Expect(!astEditSucceeded("No AST node matched type xyz"))
+        @Expect(!astEditSucceeded("AST node index 5 is out of range; matched 2 nodes"))
+        @Expect(!astEditSucceeded("AST node byte offset out of range at bad.cj"))
         @Expect(!astEditSucceeded("Path does not exist: bad.cj"))
         @Expect(!astEditSucceeded("Path escapes repository root: ../hack"))
     }

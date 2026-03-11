@@ -1,0 +1,61 @@
+// 任务优先级和状态类型定义
+package taskmanager
+
+// 任务优先级枚举 — 注意: AI 首次生成时故意遗漏了 @Derive[Equatable]
+public enum Priority {
+    | Low
+    | Medium
+    | High
+    | Critical
+
+    // 获取优先级的中文标签
+    public func label(): String {
+        match (this) {
+            case Low => "低"
+            case Medium => "中"
+            case High => "高"
+            case Critical => "紧急"
+        }
+    }
+
+    // 获取优先级的序数值，用于比较
+    public func ordinal(): Int64 {
+        match (this) {
+            case Low => 0
+            case Medium => 1
+            case High => 2
+            case Critical => 3
+        }
+    }
+
+    // 比较运算符
+    public operator func >=(rhs: Priority): Bool {
+        return this.ordinal() >= rhs.ordinal()
+    }
+}
+
+// 任务状态枚举
+public enum TaskStatus {
+    | Pending
+    | InProgress
+    | Done
+    | Cancelled
+
+    // 判断是否已终结（不可再变更）
+    public func isTerminal(): Bool {
+        match (this) {
+            case Done | Cancelled => true
+            case _ => false
+        }
+    }
+
+    // 状态的中文描述
+    public func display(): String {
+        match (this) {
+            case Pending => "待处理"
+            case InProgress => "进行中"
+            case Done => "已完成"
+            case Cancelled => "已取消"
+        }
+    }
+}

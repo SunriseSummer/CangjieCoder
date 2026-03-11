@@ -1,0 +1,132 @@
+// JSON 值类型定义
+package jsonparser
+
+import std.collection.*
+import std.deriving.*
+
+// JSON 值类型枚举
+public enum JsonValueKind {
+    | JNull
+    | JBool
+    | JNumber
+    | JString
+    | JArray
+    | JObject
+}
+
+// JSON 值
+public class JsonValue {
+    public let kind: JsonValueKind
+    var _boolVal: Bool
+    var _numberVal: Float64
+    var _stringVal: String
+    var _arrayVal: ArrayList<JsonValue>
+    var _objectKeys: ArrayList<String>
+    var _objectVals: ArrayList<JsonValue>
+
+    // 私有构造
+    init(kind: JsonValueKind) {
+        this.kind = kind
+        _boolVal = false
+        _numberVal = 0.0
+        _stringVal = ""
+        _arrayVal = ArrayList<JsonValue>()
+        _objectKeys = ArrayList<String>()
+        _objectVals = ArrayList<JsonValue>()
+    }
+
+    // 工厂方法
+    public static func ofNull(): JsonValue {
+        JsonValue(JsonValueKind.JNull)
+    }
+
+    public static func ofBool(v: Bool): JsonValue {
+        let jv = JsonValue(JsonValueKind.JBool)
+        jv._boolVal = v
+        return jv
+    }
+
+    public static func ofNumber(v: Float64): JsonValue {
+        let jv = JsonValue(JsonValueKind.JNumber)
+        jv._numberVal = v
+        return jv
+    }
+
+    public static func ofString(v: String): JsonValue {
+        let jv = JsonValue(JsonValueKind.JString)
+        jv._stringVal = v
+        return jv
+    }
+
+    public static func ofArray(items: ArrayList<JsonValue>): JsonValue {
+        let jv = JsonValue(JsonValueKind.JArray)
+        jv._arrayVal = items
+        return jv
+    }
+
+    public static func ofObject(keys: ArrayList<String>,
+                                vals: ArrayList<JsonValue>): JsonValue {
+        let jv = JsonValue(JsonValueKind.JObject)
+        jv._objectKeys = keys
+        jv._objectVals = vals
+        return jv
+    }
+
+    // 访问器
+    public func boolValue(): Bool { _boolVal }
+    public func numberValue(): Float64 { _numberVal }
+    public func stringValue(): String { _stringVal }
+    public func arrayItems(): ArrayList<JsonValue> { _arrayVal }
+    public func objectKeys(): ArrayList<String> { _objectKeys }
+    public func objectValues(): ArrayList<JsonValue> { _objectVals }
+
+    // 根据 key 取 object 子项
+    public func get(key: String): ?JsonValue {
+        var i = 0
+        while (i < _objectKeys.size) {
+            if (_objectKeys[i] == key) {
+                return _objectVals[i]
+            }
+            i += 1
+        }
+        return None
+    }
+
+    // 简易 toString
+    public func display(): String {
+        match (kind) {
+            case JNull => "null"
+            case JBool => if (_boolVal) { "true" } else { "false" }
+            case JNumber =>
+                let n = _numberVal
+                let i = Int64(n)
+                if (Float64(i) == n) {
+                    "${i}"
+                } else {
+                    "${n}"
+                }
+            case JString =>
+                let q = "\""
+                "${q}${_stringVal}${q}"
+            case JArray =>
+                var s = "["
+                var idx = 0
+                while (idx < _arrayVal.size) {
+                    if (idx > 0) { s += ", " }
+                    s += _arrayVal[idx].display()
+                    idx += 1
+                }
+                s + "]"
+            case JObject =>
+                var s = "{"
+                var idx = 0
+                while (idx < _objectKeys.size) {
+                    if (idx > 0) { s += ", " }
+                    let q = "\""
+                    s += "${q}${_objectKeys[idx]}${q}: ${_objectVals[idx].display()}"
+                    idx += 1
+                }
+                s + "}"
+        }
+    }
+}

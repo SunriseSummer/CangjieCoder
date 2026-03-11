@@ -1,0 +1,44 @@
+// 应用入口 — 演示任务管理器的基本功能
+// 注意: 此版本故意包含一个错误 — 调用了 Int64.parse() 但未 import std.convert.*
+package taskmanager
+
+import std.collection.*
+
+main() {
+    println("TaskManager v0.1.0")
+
+    // 初始化任务存储
+    let store = TaskStore()
+
+    // 添加几个示例任务
+    store.add(Task("设计系统架构", priority: Priority.High))
+    store.add(Task("编写单元测试", priority: Priority.Medium))
+    store.add(Task("优化性能瓶颈", priority: Priority.Critical))
+    store.add(Task("更新项目文档", priority: Priority.Low))
+
+    // 为任务添加标签
+    if (let Some(t) <- store.findByTitle("设计系统架构")) {
+        t.addTag("架构")
+        t.addTag("重要")
+    }
+
+    // 搜索任务
+    let results = store.search("系统")
+    println("搜索 '系统': 找到 ${results.size} 个任务")
+
+    // 完成一个任务
+    store.complete("设计系统架构")
+
+    // 显示统计
+    let stats = store.statistics()
+    println("统计: 共 ${stats.total} 个, ${stats.done} 个已完成, ${stats.pending} 个进行中")
+
+    // 从命令行参数中解析数字（故意的错误: 缺少 import std.convert.*）
+    let numStr = "42"
+    let parsed = Int64.parse(numStr)
+    println("解析数字: ${parsed}")
+
+    // 列出全部任务
+    println("全部任务:")
+    println(store.listAll())
+}
