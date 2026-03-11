@@ -150,15 +150,9 @@ public func editAstNode(repoRoot: String,
         }
 
         let updatedBytes = ArrayList<Byte>()
-        for (i in 0..startOffset) {
-            updatedBytes.add(bytes[i])
-        }
-        for (b in replacement.toArray()) {
-            updatedBytes.add(b)
-        }
-        for (i in endOffset..bytes.size) {
-            updatedBytes.add(bytes[i])
-        }
+        updatedBytes.add(all: bytes[0..startOffset])
+        updatedBytes.add(all: replacement.toArray())
+        updatedBytes.add(all: bytes[endOffset..bytes.size])
         analysisWriteTextFile(fullPath, String.fromUtf8(updatedBytes.toArray()))
         return "updated AST node ${nodeType} at ${path}:${target.startRow}:${target.startColumn}"
     }

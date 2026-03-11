@@ -80,7 +80,162 @@ Python 测试客户端采用 `subprocess.communicate()` 批量发送所有请求
 
 ---
 
-## 问题 3：Agent E2E 测试环境依赖
+## 问题 3：备份/回滚状态的会话级生命周期
+
+### 问题发现
+
+在编写 `e2etest_taskmanager` 端到端测试时，发现以下场景失败：在一个 MCP 会话中
+执行 `edit_ast_node`（触发自动备份），然后在另一个会话中调用 `workspace.rollback`，
+回滚报告成功 (`ok=true`)，但文件内容并未恢复。
+
+```python
+# 会话 1: 编辑文件（自动触发 backup）
+c1 = client()
+c1.start()
+c1.call_tool("cangjie.edit_ast_node", {...})   # 内部调用 globalBackupStore.backup()
+c1.execute()   # 进程退出 → globalBackupStore 被销毁
+
+# 会话 2: 尝试回滚
+c2 = client()
+c2.start()
+c2.call_tool("workspace.rollback")            # 新进程，globalBackupStore 为空
+resp = c2.execute()
+# resp[0]["ok"] == True, 但实际什么都没恢复
+```
+
+### 当前机制
+
+**备份存储** (`service/src/common/backup.cj`):
+- `FileBackupStore` 使用纯内存 `HashMap<String, String>` 保存文件原始内容
+- `globalBackupStore` 是包级全局变量，进程启动时创建，进程退出时销毁
+- `backup(path)` 采用首次写入保护：同一文件多次修改只保存最初版本
+- `rollbackAll()` 恢复所有备份文件后清空 HashMap
+
+**触发备份的工具** (3 处):
+| 工具 | 位置 | 触发条件 |
+|------|------|----------|
+| `workspace.create_file` | `workspace/files.cj:108` | `overwrite=true` 且文件已存在 |
+| `workspace.replace_text` | `workspace/files.cj:136` | 找到唯一匹配后、替换前 |
+| `cangjie.edit_ast_node` | `analysis/handlers.cj:73` | AST 节点替换前 |
+
+**进程模型** (`tests/mcp_client.py`):
+每次 `McpClient.execute()` 启动一个全新的 `cangjiecoder mcp-stdio` 子进程，
+通过 `proc.communicate()` 一次性发送所有请求帧，读取响应后进程退出。
+因此，`globalBackupStore` 的生命周期与单次 `execute()` 调用完全一致。
+
+### 状态生命周期图
+
+```
+┌─ McpClient.execute() ──────────────────────────────────┐
+│                                                         │
+│  subprocess.Popen("cangjiecoder mcp-stdio ...")         │
+│  ┌─ 服务进程 ───────────────────────────────────────┐   │
+│  │                                                   │   │
+│  │  globalBackupStore = FileBackupStore()  ← 空的    │   │
+│  │                                                   │   │
+│  │  while (stdin 有数据) {                           │   │
+│  │     请求 → 处理 → 响应                             │   │
+│  │                                                   │   │
+│  │     create_file(overwrite) → backup() → 写入      │   │
+│  │     replace_text           → backup() → 替换      │   │
+│  │     edit_ast_node          → backup() → 替换      │   │
+│  │     rollback               → rollbackAll() → 恢复 │   │
+│  │  }                                                │   │
+│  │                                                   │   │
+│  │  // stdin EOF → 循环结束                           │   │
+│  │  // 进程退出 → globalBackupStore 销毁              │   │
+│  └───────────────────────────────────────────────────┘   │
+│                                                         │
+│  proc.communicate() → 收集响应 → 返回                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 合理性评估
+
+**合理的部分:**
+- **简单可靠**: 纯内存存储不需要文件锁、序列化、临时文件清理
+- **无副作用**: 进程退出自动清理，不留下 `.bak` 文件
+- **事务语义**: 同一会话中的操作构成一个"事务"，可整体回滚
+- **安全隔离**: 不同会话（进程）之间不会互相干扰
+
+**局限的部分:**
+- **跨会话回滚不可能**: 如果客户端在编辑后断开连接，备份丢失，修改不可撤销
+- **空回滚静默成功**: `rollback` 在无备份时返回 `ok=true`（`count=0`），
+  调用者可能误以为回滚成功，实际上什么都没恢复
+- **与持久连接 Agent 的差距**: 真实 AI Agent 通常在多轮对话中保持长连接，
+  而 MCP stdio 模式每次请求都是独立进程
+
+### 与真实 Agent 使用场景的对比
+
+| 场景 | MCP stdio (当前) | 持久连接 Agent |
+|------|------------------|----------------|
+| 编辑 → 编译 → 回滚 (同一轮) | ✅ 可行 | ✅ 可行 |
+| 编辑 → 断开 → 重连 → 回滚 | ❌ 备份已丢失 | 取决于持久化 |
+| 多轮对话中的增量回滚 | ❌ 每轮是新进程 | ✅ 状态保持 |
+| 并发 Agent 的备份隔离 | ✅ 天然进程隔离 | 需要额外机制 |
+
+### 测试中的规避方式
+
+编辑和回滚必须放在同一个 `execute()` 调用中:
+
+```python
+# ✅ 正确做法: 同一会话中完成编辑-验证-回滚-验证
+c = client()
+c.start()
+c.call_tool("workspace.read_file", {"path": "src/task.cj"})     # 1 原始
+c.call_tool("cangjie.edit_ast_node", {...})                       # 2 编辑
+c.call_tool("workspace.read_file", {"path": "src/task.cj"})     # 3 验证编辑
+c.call_tool("workspace.rollback")                                 # 4 回滚
+c.call_tool("workspace.read_file", {"path": "src/task.cj"})     # 5 验证恢复
+resp = c.execute()
+assert resp[5]["data"]["content"] == resp[1]["data"]["content"]  # ✅ 一致
+```
+
+### 可能的改进方向
+
+1. **持久化备份**: 将备份 HashMap 序列化到磁盘（如 `.cangjiecoder/backups.json`），
+   进程重启后可恢复
+2. **区分空回滚的响应**: 当无备份时返回不同的 summary（如 "No pending backups"）
+   而非简单的 `ok=true`，帮助调用者准确判断
+3. **持久连接模式**: 通过 HTTP/WebSocket 长连接替代 stdio 的短生命周期进程模型
+
+---
+
+## 问题 4：edit_ast_node 依赖外部 tree-sitter CLI（已修复）
+
+### 现象
+
+`cangjie.edit_ast_node` 工具在所有环境中均失败，返回错误:
+```
+tree-sitter unavailable for AST edit: ProcessException: Created process failed,
+errMessage: "No such file or directory".
+```
+
+### 原因
+
+`editAstNode()` 函数（`service/src/analysis/analyzer.cj`）通过 `getVariable("TREE_SITTER_CANGJIE")`
+获取外部 `tree-sitter` CLI 路径，然后 `spawn` 子进程执行 `tree-sitter parse <file>` 来获取
+AST 节点坐标。这与其他所有 AST 工具（`ast_parse`、`ast_query_nodes`、`ast_summary` 等）
+使用内置 tree-sitter FFI 的方式不一致。
+
+而内置 FFI 的 `queryNodes()` 已经通过 C API 直接返回 `NodeInfo.startByte` / `NodeInfo.endByte`
+字节偏移量——恰好是编辑替换所需要的信息。
+
+### 修复
+
+将 `editAstNode()` 改为使用内置 `queryNodes()` FFI:
+- 删除外部 `tree-sitter` CLI 调用
+- 直接使用 `NodeInfo.startByte` / `NodeInfo.endByte` 定位替换范围
+- 从 ~35 行实现缩减到 ~20 行
+- 零外部依赖，与其他 AST 工具保持一致
+
+旧的辅助函数（`AstNodeMatch`、`parseTreeSitterNodeMatches`、`parseNodeCoordinate`、
+`offsetForPoint`）保留，因为仍被 `analyzeCangjieFile` 的 tree-sitter CLI 分析路径使用，
+且有独立的单元测试覆盖。
+
+---
+
+## 问题 5：Agent E2E 测试环境依赖
 
 ### 现象
 

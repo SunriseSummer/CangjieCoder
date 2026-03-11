@@ -400,7 +400,7 @@ def run_e2e(service_bin, keep_workspace):
             "path": "src/task.cj",
             "nodeType": "functionDefinition",
             "replacement": replacement,
-            "index": max(0, summary_idx)
+            "index": summary_idx
         })
         # 读取编辑后的文件
         c.call_tool("workspace.read_file", {"path": "src/task.cj"})            # 3
