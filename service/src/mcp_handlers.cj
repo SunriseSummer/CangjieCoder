@@ -5,6 +5,7 @@ package cangjiecoder
 
 import std.collection.*
 import std.env.*
+import std.fs.*
 import stdx.encoding.json.*
 import cangjiecoder.common.*
 import cangjiecoder.json.*
@@ -34,6 +35,19 @@ func writeStdoutDirect(content: String): Unit {
 
 // ── MCP 工具调度 ─────────────────────────────────────
 
+// 检查路径是否为已存在的目录
+func isDirectory(path: String): Bool {
+    if (!exists(path)) {
+        return false
+    }
+    try {
+        Directory.isEmpty(Path(path))
+        return true
+    } catch (_: Exception) {
+        return false
+    }
+}
+
 // 在工具注册表中查找并调用指定名称的工具处理函数。
 // 未知工具或执行异常时返回标准化的错误结果。
 func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
@@ -55,8 +69,18 @@ func callMcpTool(toolRegistry: HashMap<String, McpToolHandler>,
 // MCP 方法处理函数类型：接收运行时、请求 id、参数，返回 JSON-RPC 响应字符串
 type McpMethodHandler = (McpRuntime, String, JsonObject) -> String
 
-// 处理 initialize 请求：返回服务器能力声明和标识信息
-func handleInitialize(_: McpRuntime, idJson: String, _: JsonObject): String {
+// 处理 initialize 请求：返回服务器能力声明和标识信息。
+// 同时从客户端参数中提取 roots 信息，自动设置工作区路径。
+func handleInitialize(runtime: McpRuntime, idJson: String, params: JsonObject): String {
+    // 从客户端 initialize 参数中提取 roots，自动设置工作区路径
+    if (!runtime.hasExplicitRepo) {
+        if (let Some(rootPath) <- extractFirstRootPath(params)) {
+            if (isDirectory(rootPath)) {
+                runtime.workspaceRoot = canonicalize(rootPath).toString()
+            }
+        }
+    }
+
     let result = JsonObject()
     // 声明支持的能力：工具调用、提示词、资源访问
     let capabilities = JsonObject()
@@ -87,14 +111,31 @@ func handleToolsList(_: McpRuntime, idJson: String, _: JsonObject): String {
     return jsonRpcResult(idJson, toolDefinitionsJson())
 }
 
-// 处理 tools/call 请求：解析工具名和参数，调度到具体的工具处理函数
+// 处理 tools/call 请求：解析工具名和参数，调度到具体的工具处理函数。
+// 支持 workspacePath 参数覆盖工作区路径，以及 workspace.set_root/get_root 动态管理工作区。
 func handleToolsCall(runtime: McpRuntime, idJson: String, params: JsonObject): String {
     let toolName = jsonField(params, "name")
     let toolArgs = match (params.get("arguments")) {
         case Some(value) => value.asObject()
         case None => JsonObject()
     }
-    let ctx = McpToolContext(runtime.workspaceRoot, runtime.serviceRoot)
+
+    // workspace.set_root：动态设置会话级工作区根目录
+    if (toolName == "workspace.set_root") {
+        let toolResult = handleSetRoot(runtime, toolArgs)
+        return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
+    }
+
+    // workspace.get_root：查询当前工作区根目录
+    if (toolName == "workspace.get_root") {
+        let toolResult = handleGetRoot(runtime)
+        return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
+    }
+
+    // 支持 workspacePath 参数覆盖当前调用的工作区路径
+    let effectiveWorkspaceRoot = resolveEffectiveWorkspaceRoot(runtime.workspaceRoot, toolArgs)
+
+    let ctx = McpToolContext(effectiveWorkspaceRoot, runtime.serviceRoot)
     let toolResult = callMcpTool(runtime.toolRegistry, ctx, toolName, toolArgs)
     return jsonRpcResult(idJson, mcpToolCallResultJson(toolResult))
 }
@@ -115,14 +156,16 @@ func buildMcpMethodRegistry(): HashMap<String, McpMethodHandler> {
 // MCP 服务运行时：维护工作区路径、方法注册表和工具注册表，
 // 负责接收和分发 JSON-RPC 请求
 class McpRuntime {
-    public let workspaceRoot: String      // 用户工作区根目录
+    public var workspaceRoot: String      // 用户工作区根目录（可通过 initialize roots 或 set_root 动态修改）
     public let serviceRoot: String        // 服务自身所在目录（用于定位内置资源）
+    public let hasExplicitRepo: Bool      // 是否通过 --repo 显式指定了工作区
     let methodRegistry: HashMap<String, McpMethodHandler>
     public let toolRegistry: HashMap<String, McpToolHandler>
 
-    public init(workspaceRoot: String, serviceRoot!: String = "") {
+    public init(workspaceRoot: String, serviceRoot!: String = "", hasExplicitRepo!: Bool = false) {
         this.workspaceRoot = workspaceRoot
         this.serviceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
+        this.hasExplicitRepo = hasExplicitRepo
         this.methodRegistry = buildMcpMethodRegistry()
         this.toolRegistry = buildMcpToolRegistry()
     }
@@ -180,7 +223,84 @@ func startMcpStdioServer(runtime: McpRuntime): Unit {
 // ── 工厂函数 ─────────────────────────────────────────
 
 // 创建 MCP 运行时实例，serviceRoot 默认等于 workspaceRoot
-func createMcpRuntime(workspaceRoot: String, serviceRoot!: String = ""): McpRuntime {
+func createMcpRuntime(workspaceRoot: String, serviceRoot!: String = "",
+                      hasExplicitRepo!: Bool = false): McpRuntime {
     let effectiveServiceRoot = if (serviceRoot.trimAscii().isEmpty()) { workspaceRoot } else { serviceRoot }
-    return McpRuntime(workspaceRoot, serviceRoot: effectiveServiceRoot)
+    return McpRuntime(workspaceRoot, serviceRoot: effectiveServiceRoot,
+        hasExplicitRepo: hasExplicitRepo)
+}
+
+// ── 动态工作区辅助函数 ────────────────────────────────
+
+// 从 MCP initialize 请求参数中提取第一个 root 路径。
+// 支持 MCP 协议中 roots 数组格式：[{"uri":"file:///path","name":"..."}]
+func extractFirstRootPath(params: JsonObject): ?String {
+    match (params.get("roots")) {
+        case Some(rootsValue) =>
+            let rootsArray = rootsValue.asArray()
+            if (rootsArray.size() > 0) {
+                match (rootsArray.get(0)) {
+                    case Some(firstRootValue) =>
+                        let firstRoot = firstRootValue.asObject()
+                        let uri = jsonField(firstRoot, "uri")
+                        return fileUriToPath(uri)
+                    case None => return None
+                }
+            }
+            return None
+        case None => return None
+    }
+}
+
+// 将 file:// URI 转换为本地文件路径
+func fileUriToPath(uri: String): ?String {
+    if (uri.startsWith("file:///")) {
+        return uri[7..uri.size]
+    }
+    return None
+}
+
+// 解析工具参数中的 workspacePath 覆盖值。
+// 如果参数中包含有效的 workspacePath 目录路径，则使用它替代默认工作区根目录。
+func resolveEffectiveWorkspaceRoot(defaultRoot: String, args: JsonObject): String {
+    let overridePath = jsonField(args, "workspacePath").trimAscii()
+    if (overridePath.isEmpty()) {
+        return defaultRoot
+    }
+    if (!overridePath.startsWith("/")) {
+        return defaultRoot
+    }
+    if (isDirectory(overridePath)) {
+        return canonicalize(overridePath).toString()
+    }
+    return defaultRoot
+}
+
+// workspace.set_root 工具处理：动态修改会话级工作区根目录
+func handleSetRoot(runtime: McpRuntime, args: JsonObject): String {
+    let path = jsonField(args, "path").trimAscii()
+    if (path.isEmpty()) {
+        return toolMessageJson(false, "workspace.set_root requires a path",
+            "path parameter must be a non-empty absolute directory path")
+    }
+    if (!path.startsWith("/")) {
+        return toolMessageJson(false, "workspace.set_root requires an absolute path",
+            "Provided path is not absolute: ${path}")
+    }
+    if (!isDirectory(path)) {
+        return toolMessageJson(false, "workspace.set_root target does not exist",
+            "Directory does not exist: ${path}")
+    }
+    let canonicalPath = canonicalize(path).toString()
+    runtime.workspaceRoot = canonicalPath
+    let data = JsonObject()
+    data.put("workspaceRoot", JsonString(canonicalPath))
+    return toolResultJson(true, "Workspace root updated", data: data)
+}
+
+// workspace.get_root 工具处理：返回当前工作区根目录
+func handleGetRoot(runtime: McpRuntime): String {
+    let data = JsonObject()
+    data.put("workspaceRoot", JsonString(runtime.workspaceRoot))
+    return toolResultJson(true, "Current workspace root", data: data)
 }

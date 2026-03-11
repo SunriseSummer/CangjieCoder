@@ -109,6 +109,11 @@ public func buildToolDefinitions(): Array<ToolDefinition> {
     ]))
     // 事务回滚
     defs.add(ToolDefinition("workspace.rollback", "Roll back all file modifications made since the last successful validation, restoring files to their pre-edit state.", []))
+    // 工作区根目录管理
+    defs.add(ToolDefinition("workspace.set_root", "Dynamically set the workspace root directory for this session. Use this when the MCP service was started without --repo or when switching to a different project mid-session. All subsequent tool calls will use the new workspace root unless overridden by a workspacePath argument.", [
+        ToolArgSpec("path", "string", "Absolute path to the new workspace root directory.", true)
+    ]))
+    defs.add(ToolDefinition("workspace.get_root", "Return the current workspace root directory path. Useful for confirming which project directory the service is operating on.", []))
     // 内置 AST 服务
     defs.add(ToolDefinition("cangjie.ast_parse", "Parse Cangjie source code via built-in tree-sitter and return the S-expression syntax tree.", [
         ToolArgSpec("path", "string", "Cangjie source file path.", true)

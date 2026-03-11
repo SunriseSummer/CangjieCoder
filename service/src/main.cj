@@ -48,8 +48,9 @@ func printUsage(): Unit {
 // 基于 std.argopt 解析结果构造 AppConfig
 func buildAppConfig(options: HashMap<String, String>): AppConfig {
     let serviceRoot = canonicalize(getWorkingDirectory().toString()).toString()
+    let hasExplicitRepo = options.contains("repo") || options.contains("r")
     let workspaceRoot = canonicalize(optionValue(options, "repo", "r", fallback: serviceRoot)).toString()
-    return AppConfig(workspaceRoot, serviceRoot)
+    return AppConfig(workspaceRoot, serviceRoot, hasExplicitRepo)
 }
 
 // 获取第 n 个非选项参数，越界时返回空串
@@ -83,7 +84,8 @@ func printLspQueryResult(result: LspQueryResult): Int64 {
 // 各 CLI 子命令的独立处理函数
 
 func cmdMcpStdio(config: AppConfig, _: Array<String>): Int64 {
-    let runtime = createMcpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot)
+    let runtime = createMcpRuntime(config.workspaceRoot, serviceRoot: config.serviceRoot,
+        hasExplicitRepo: config.hasExplicitRepo)
     startMcpStdioServer(runtime)
     return 0
 }

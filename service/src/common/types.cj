@@ -5,5 +5,6 @@ public const APP_VERSION: String = "0.4.0"
 
 public struct AppConfig {
     public AppConfig(public let workspaceRoot: String,
-                     public let serviceRoot: String) {}
+                     public let serviceRoot: String,
+                     public let hasExplicitRepo: Bool) {}
 }
