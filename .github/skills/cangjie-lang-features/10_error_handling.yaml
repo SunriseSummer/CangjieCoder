@@ -1,0 +1,129 @@
+# Cangjie Error Handling
+# Exceptions, Option-based error handling, try/catch
+
+exception_hierarchy:
+  root_types:
+    Error: |
+      System/resource errors — should NOT be caught or thrown manually.
+      Examples: OutOfMemoryError, StackOverflowError
+    Exception: |
+      Logic/IO errors — can be caught and handled.
+      Base class for all user-defined exceptions.
+
+  exception_class:
+    constructors:
+      - "init()"
+      - "init(message: String)"
+    members:
+      - "message: String                  # error message"
+      - "toString(): String               # string representation"
+      - "printStackTrace(): Unit          # print stack trace"
+
+  custom_exception: |
+    open class BusinessException <: Exception {
+        public init(msg: String) {
+            super(msg)
+        }
+    }
+    class InsufficientFundsException <: BusinessException {
+        public init(amount: Float64) {
+            super("Insufficient funds: ${amount}")
+        }
+    }
+
+  common_runtime_exceptions:
+    - ArithmeticException
+    - IllegalArgumentException
+    - NegativeArraySizeException
+    - NoneValueException
+    - OverflowException
+    - ConcurrentModificationException
+    - IndexOutOfBoundsException
+
+throwing:
+  syntax: "throw ExceptionInstance"
+  example: |
+    func divide(a: Int64, b: Int64): Int64 {
+        if (b == 0) {
+            throw ArithmeticException("Division by zero")
+        }
+        return a / b
+    }
+  unchecked: |
+    Exceptions are UNCHECKED in Cangjie:
+    - No throws declaration in function signature
+    - Compiler does NOT enforce catching
+    - Unhandled exceptions crash at runtime with stack trace
+
+try_catch_finally:
+  basic: |
+    try {
+        riskyOperation()
+    } catch (e: SpecificException) {
+        handleSpecific(e)
+    } catch (e: Exception) {
+        handleGeneral(e)
+    } finally {
+        cleanup()
+    }
+
+  as_expression: |
+    let result = try {
+        parseInt(input)
+    } catch (_: Exception) {
+        0  // default value on error
+    }
+
+  catch_patterns:
+    type_pattern: "catch (e: ExceptionType)"
+    multi_type: "catch (e: Type1 | Type2)"
+    wildcard: "catch (_)"
+    note: "catch blocks are tried in order; first match wins"
+
+  try_with_resources:
+    syntax: |
+      try (resource = acquireResource()) {
+          useResource(resource)
+      }
+      // resource.close() called automatically
+    requirement: |
+      Resource must implement Resource interface:
+        interface Resource {
+            func isClosed(): Bool
+            func close(): Unit
+        }
+
+option_based_error_handling:
+  description: |
+    Use Option<T> for predictable "no value" scenarios
+    instead of exceptions.
+
+  coalescing: |
+    let name = optionalName ?? "Anonymous"
+    // Returns optionalName if Some, otherwise "Anonymous"
+
+  optional_chaining: |
+    let len = user?.profile?.name?.size
+    // Returns ?Int64; None if any step is None
+
+  get_or_throw: |
+    let value = opt.getOrThrow()
+    // Throws NoneValueException if None
+
+  pattern_match: |
+    match (findUser(id)) {
+        case Some(user) => println(user.name)
+        case None => println("User not found")
+    }
+
+  if_let: |
+    if (let Some(user) <- findUser(id)) {
+        println(user.name)
+    }
+
+best_practices:
+  - "Use Exception for exceptional/unexpected failures"
+  - "Use Option<T> for expected absence of values"
+  - "Catch specific exception types, not bare Exception"
+  - "Use try-with-resources for Resource implementations"
+  - "Custom exceptions should extend Exception, not Error"

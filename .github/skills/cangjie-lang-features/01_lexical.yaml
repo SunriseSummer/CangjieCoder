@@ -1,0 +1,223 @@
+# Cangjie Lexical Elements
+# Keywords, operators, literals, identifiers
+
+keywords:
+  declaration:
+    - let       # immutable binding
+    - var       # mutable binding
+    - const     # compile-time constant
+    - func      # function declaration
+    - class     # class declaration
+    - struct    # struct declaration
+    - enum      # enum declaration
+    - interface # interface declaration
+    - extend    # type extension
+    - type      # type alias
+    - macro     # macro declaration
+    - package   # package declaration
+    - import    # import declaration
+    - foreign   # foreign (C) function declaration
+    - init      # constructor
+    - prop      # property declaration
+    - main      # entry point (no func keyword needed)
+  modifiers:
+    - public     # visible everywhere
+    - private    # visible only in same file
+    - internal   # visible in same package + subpackages (default)
+    - protected  # visible in same module + subclass bodies
+    - open       # allows override in subclass
+    - override   # overrides parent instance member
+    - redef      # redefines parent static member
+    - abstract   # no implementation, must be overridden
+    - static     # belongs to type, not instance
+    - sealed     # contextual; restricts inheritance/implementation to same package
+    - mut        # mutable property or struct-mutating function
+    - unsafe     # unsafe block for FFI
+    - inout      # pass-by-reference to C function
+  control_flow:
+    - if
+    - else
+    - match
+    - case
+    - where     # pattern guard / generic constraint
+    - for
+    - in
+    - while
+    - do
+    - break
+    - continue
+    - return
+    - throw
+    - try
+    - catch
+    - finally
+    - spawn     # create lightweight thread
+  type_related:
+    - is       # runtime type check → Bool
+    - as       # safe type cast → Option<T>
+    - this     # current instance reference
+    - super    # parent class reference
+    - true
+    - false
+    - Nothing  # bottom type (no value)
+  special:
+    - This     # self-referential return type in classes
+
+identifiers:
+  rules:
+    - "Start with letter or underscore"
+    - "Followed by letters, digits, or underscores"
+    - "Unicode letters are allowed"
+  raw_identifier: "`keyword`  # use keyword as identifier by wrapping in backticks"
+
+operators:
+  by_precedence:  # highest to lowest
+    - level: 1
+      ops: ["@"]
+      assoc: right
+      note: "Macro / annotation call"
+    - level: 2
+      ops: ["."]
+      assoc: left
+      note: "Member access"
+    - level: 2
+      ops: ["?.", "?[", "?(", "?{"]
+      assoc: left
+      note: "Optional chaining"
+    - level: 3
+      ops: ["()"]
+      assoc: left
+      note: "Function call"
+    - level: 3
+      ops: ["[]"]
+      assoc: left
+      note: "Subscript (index)"
+    - level: 4
+      ops: ["++", "--"]
+      assoc: right
+      note: "Postfix increment / decrement"
+    - level: 5
+      ops: ["!"]
+      assoc: right
+      note: "Logical NOT (prefix)"
+    - level: 5
+      ops: ["-"]
+      assoc: right
+      note: "Unary negation (prefix)"
+    - level: 5
+      ops: ["~"]
+      assoc: right
+      note: "Bitwise NOT (prefix)"
+    - level: 6
+      ops: ["**"]
+      assoc: right
+      note: "Exponentiation"
+    - level: 7
+      ops: ["*", "/", "%"]
+      assoc: left
+      note: "Multiplicative"
+    - level: 8
+      ops: ["+", "-"]
+      assoc: left
+      note: "Additive"
+    - level: 9
+      ops: ["<<", ">>"]
+      assoc: left
+      note: "Bitwise shift"
+    - level: 10
+      ops: [".."]
+      assoc: none
+      note: "Range (inclusive)"
+    - level: 10
+      ops: ["..="]
+      assoc: none
+      note: "Range (fully inclusive)"
+    - level: 11
+      ops: ["<", "<=", ">", ">="]
+      assoc: none
+      note: "Comparison"
+    - level: 12
+      ops: ["==", "!="]
+      assoc: none
+      note: "Equality"
+    - level: 13
+      ops: ["&"]
+      assoc: left
+      note: "Bitwise AND"
+    - level: 14
+      ops: ["^"]
+      assoc: left
+      note: "Bitwise XOR"
+    - level: 15
+      ops: ["|"]
+      assoc: left
+      note: "Bitwise OR"
+    - level: 16
+      ops: ["&&"]
+      assoc: left
+      note: "Logical AND (short-circuit)"
+    - level: 17
+      ops: ["||"]
+      assoc: left
+      note: "Logical OR (short-circuit)"
+    - level: 18
+      ops: ["??"]
+      assoc: right
+      note: "None coalescing (for Option<T>)"
+    - level: 19
+      ops: ["|>"]
+      assoc: left
+      note: "Pipeline: x |> f  ≡  f(x)"
+    - level: 20
+      ops: ["~>"]
+      assoc: left
+      note: "Composition: f ~> g  ≡  { x => g(f(x)) }"
+    - level: 21
+      ops: ["=", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", "&=", "|=", "^=", "&&=", "||="]
+      assoc: right
+      note: "Assignment"
+
+  overloadable: |
+    Overloadable via `operator func`:
+      Unary: !, - (negate), ~ (bitwise NOT)
+      Binary: +, -, *, /, %, **, <<, >>, &, |, ^, ==, !=, <, <=, >, >=
+      Subscript: [], []= (get/set)
+      Call: () (function call operator)
+
+literals:
+  integer:
+    - "42          # decimal"
+    - "0xFF        # hexadecimal"
+    - "0o77        # octal"
+    - "0b1010      # binary"
+    - "1_000_000   # underscores for readability"
+    suffixes: "i8, i16, i32, i64 (default), u8, u16, u32, u64"
+  floating_point:
+    - "3.14        # Float64 (default)"
+    - "2.5e10      # scientific notation"
+    - "1.0f32      # Float32 suffix"
+    suffixes: "f32, f64 (default)"
+  boolean: ["true", "false"]
+  rune:
+    - "'A'         # character literal"
+    - "'\\n'        # escape character"
+    - "'\\u{1F600}' # Unicode code point"
+  string:
+    single_line: '"Hello, ${name}!"  # interpolation with ${expr}'
+    multi_line: |
+      let s = """
+          multi-line string
+          preserves content as-is including indentation
+          supports ${interpolation}
+          """
+    raw: |
+      #"raw string \n not escaped"#
+      ##"can contain "# inside"##
+    byte_literal: "b'A'  # UInt8 byte literal (ASCII character)"
+  array: "[1, 2, 3]      # Array<Int64>"
+  tuple: "(1, true, 3.0) # (Int64, Bool, Float64)"
+  range:
+    - "1..5         # Range<Int64> inclusive [1,5)"
+    - "1..=5        # Range<Int64> fully inclusive [1,5] (with ..= operator)"
+  unit: "()"
+  none: "None  # Option<T>.None"

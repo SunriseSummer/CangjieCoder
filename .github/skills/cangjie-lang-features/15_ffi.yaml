@@ -1,0 +1,108 @@
+# Cangjie C Interoperability (FFI)
+# Foreign function interface, unsafe blocks, type mapping
+
+foreign_functions:
+  declaration:
+    syntax: |
+      foreign func functionName(params): ReturnType
+    example: |
+      foreign func rand(): Int32
+      foreign func printf(fmt: CString, ...): Int32
+      foreign func strlen(s: CString): UIntNative
+    rules:
+      - "No function body"
+      - "Parameters and return must satisfy CType constraint"
+      - "Supports variadic parameters (...) at end"
+      - "No named parameters or default values"
+
+  calling:
+    syntax: |
+      unsafe {
+          let r = rand()
+          printf(LibC.mallocCString("value: %d\n"), r)
+      }
+    requirement: "All foreign function calls must be inside unsafe blocks"
+
+type_mapping:
+  primitive_types:
+    - { cangjie: Int8, c: int8_t / char }
+    - { cangjie: Int16, c: int16_t / short }
+    - { cangjie: Int32, c: "int32_t (typically int on most platforms)" }
+    - { cangjie: Int64, c: int64_t / long long }
+    - { cangjie: UInt8, c: uint8_t / unsigned char }
+    - { cangjie: UInt16, c: uint16_t / unsigned short }
+    - { cangjie: UInt32, c: uint32_t / unsigned int }
+    - { cangjie: UInt64, c: uint64_t / unsigned long long }
+    - { cangjie: Float32, c: float }
+    - { cangjie: Float64, c: double }
+    - { cangjie: Bool, c: bool }
+    - { cangjie: Unit, c: void }
+    - { cangjie: IntNative, c: ssize_t }
+    - { cangjie: UIntNative, c: size_t }
+  pointer_types:
+    - { cangjie: "CPointer<T>", c: "T*" }
+    - { cangjie: CString, c: "const char*" }
+  function_pointer:
+    cangjie: "CFunc<(ParamTypes) -> ReturnType>"
+    c: "ReturnType (*)(ParamTypes)"
+
+cfunc:
+  description: "C-compatible function pointers"
+  forms:
+    foreign: |
+      foreign func free(ptr: CPointer<Int8>): Unit  // Form 1: foreign declaration
+    annotated: |
+      @C
+      func myCallback(value: Int32): Unit {          // Form 2: @C annotated
+          println("Callback: ${value}")
+      }
+    lambda: |
+      let f: CFunc<(Int32) -> Unit> = { v =>         // Form 3: CFunc lambda
+          println("Lambda: ${v}")
+      }
+  restriction: "CFunc lambdas cannot capture variables from enclosing scope"
+
+unsafe_blocks:
+  syntax: |
+    unsafe {
+        // foreign function calls
+        // pointer operations
+    }
+  required_for:
+    - "Calling foreign functions"
+    - "Calling CFunc values"
+    - "Pointer arithmetic and dereferencing"
+
+inout_parameters:
+  syntax: "foreignFunc(inout variable)"
+  description: "Passes variable by reference as CPointer<T> to C function"
+  rules:
+    - "Only for CFunc / foreign function calls"
+    - "Variable must be var (not let)"
+    - "Cannot be literals or temporaries"
+    - "Type must satisfy CType (not CString)"
+    - "Pointer valid only during the call"
+    - "Cannot be class instance members"
+  example: |
+    foreign func scanf(fmt: CString, ...): Int32
+    var x: Int32 = 0
+    unsafe { scanf(LibC.mallocCString("%d"), inout x) }
+    println(x)
+
+c_annotation:
+  syntax: "@C"
+  applicable_to:
+    - "foreign function declarations"
+    - "Top-level non-generic functions (makes them callable from C)"
+    - "struct types (C-compatible memory layout)"
+  not_applicable_to:
+    - "foreign var"
+    - "Classes, interfaces, enums"
+
+memory_management:
+  note: |
+    C memory is not managed by Cangjie GC.
+    Use LibC utilities for manual allocation/deallocation:
+      let ptr = LibC.malloc<Int32>(10)   // allocate
+      LibC.free(ptr)                      // deallocate
+    CString from mallocCString must be freed manually.

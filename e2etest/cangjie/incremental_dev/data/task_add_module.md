@@ -1,0 +1,1 @@
+这是一个已有的仓颉语言项目。请创建一个新文件 src/str_utils.cj，包含以下函数：repeatStr(s: String, n: Int64): String 将字符串重复 n 次；padLeft(s: String, width: Int64, ch: Rune): String 左填充到指定宽度；truncate(s: String, maxLen: Int64): String 截断到最大长度，超过部分用 ... 替代。并在 src/main.cj 中添加新函数的演示调用。最终确保项目能编译通过。完成后回复 done。

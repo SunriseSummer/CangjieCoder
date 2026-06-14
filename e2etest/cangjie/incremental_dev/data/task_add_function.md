@@ -1,0 +1,1 @@
+这是一个已有的仓颉语言项目。请在 src/calculator.cj 中增加以下函数：power(base: Float64, exp: Float64): Float64 计算幂；modulo(a: Int64, b: Int64): Int64 取模，b==0 时抛异常。并更新 src/main.cj 添加新函数的演示调用。使用 edit_file 修改现有文件，不要覆盖已有代码。最终确保项目能编译通过。完成后回复 done。

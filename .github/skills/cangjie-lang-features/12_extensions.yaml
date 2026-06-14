@@ -1,0 +1,90 @@
+# Cangjie Type Extensions
+# Adding members to existing types without modification
+
+direct_extension:
+  syntax: |
+    extend TargetType {
+        public func newMethod(): ReturnType { ... }
+        public prop newProperty: Type { get() { ... } }
+        public operator func +(rhs: TargetType): TargetType { ... }
+    }
+  example: |
+    extend String {
+        public func isPalindrome(): Bool {
+            let chars = Array<Rune>(this)
+            var i = 0
+            var j = chars.size - 1
+            while (i < j) {
+                if (chars[i] != chars[j]) { return false }
+                i += 1
+                j -= 1
+            }
+            return true
+        }
+    }
+    // Usage: "racecar".isPalindrome()  // true
+
+  generic_extension: |
+    extend<T> Array<T> where T <: ToString {
+        public func joinToString(separator: String): String {
+            var result = ""
+            for (i in 0..this.size) {
+                if (i > 0) { result += separator }
+                result += this[i].toString()
+            }
+            result
+        }
+    }
+
+interface_extension:
+  syntax: |
+    extend TargetType <: InterfaceName {
+        public func requiredMethod(): ReturnType { ... }
+    }
+  multiple_interfaces: |
+    extend TargetType <: Interface1 & Interface2 {
+        // implement all required members
+    }
+  example: |
+    interface Printable {
+        func display(): String
+    }
+
+    extend Int64 <: Printable {
+        public func display(): String { "${this}" }
+    }
+
+  generic_interface_extension: |
+    extend<T> Array<T> <: Printable where T <: ToString {
+        public func display(): String {
+            "[${this.joinToString(", ")}]"
+        }
+    }
+
+rules:
+  what_can_be_added:
+    - "Instance and static functions"
+    - "Properties (prop / mut prop)"
+    - "Operator functions"
+    - "Interface implementations"
+  what_cannot_be_added:
+    - "Member variables (no new fields)"
+  modifiers_not_allowed:
+    - "open (extension members cannot be overridden)"
+    - "override (cannot override original members)"
+    - "redef (cannot redefine original static members)"
+  access:
+    - "this keyword works normally inside extensions"
+    - "super keyword is NOT available"
+    - "Cannot access private members of the extended type"
+    - "Cannot shadow existing members of the type"
+  visibility: |
+    Extension members are visible within the package where defined.
+    Direct extensions: auto-exported if type and constraints are exported.
+    Interface extensions: auto-exported if type and interface are exported.
+    Imported automatically with the type — no explicit import needed.
+
+orphan_rule: |
+  Cannot implement a foreign interface on a foreign type:
+    extend ForeignType <: ForeignInterface { ... }  // ERROR
+  At least one of (type, interface) must be defined in current package/module.

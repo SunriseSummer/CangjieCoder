@@ -1,0 +1,79 @@
+# Cangjie Reflection and Annotations
+# Runtime type introspection, custom annotations, overflow control
+
+annotations:
+  overflow_control:
+    description: "Control integer overflow behavior at function level"
+    types:
+      OverflowThrowing:
+        behavior: "Throw OverflowException on overflow (DEFAULT)"
+        syntax: "@OverflowThrowing"
+      OverflowWrapping:
+        behavior: "Wrap around (modular arithmetic, truncate high bits)"
+        syntax: "@OverflowWrapping"
+      OverflowSaturating:
+        behavior: "Clamp to min/max value of the type"
+        syntax: "@OverflowSaturating"
+    affected_operators: ["+", "-", "*", "/", "**", "++", "--", "<<"]
+    unaffected_operators: ["%", "&", "|", "^", ">>", "comparison operators"]
+    example: |
+      @OverflowWrapping
+      func wrappingAdd(a: Int8, b: Int8): Int8 { a + b }
+
+      @OverflowSaturating
+      func saturatingAdd(a: Int8, b: Int8): Int8 { a + b }
+
+  custom_annotations:
+    syntax: |
+      @Annotation[target: [AnnotationKind.Type]]
+      public class MyAnnotation {
+          // annotation fields
+      }
+    annotation_kinds:
+      - Type
+      - Parameter
+      - Init
+      - MemberProperty
+      - MemberFunction
+      - MemberVariable
+      - EnumConstructor
+      - GlobalFunction
+      - GlobalVariable
+      - Extension
+    example: |
+      @Annotation[target: [MemberFunction, GlobalFunction]]
+      public class Deprecated {
+          let message: String
+          public init(message: String) { this.message = message }
+      }
+
+reflection:
+  type_info:
+    description: "Runtime type information access"
+    obtaining:
+      from_instance: "TypeInfo.of(anyInstance)          // runtime type"
+      from_generic: "TypeInfo.of<T>()                    // static type T"
+      from_name: 'TypeInfo.get("module.package.Type")  // lookup by qualified name'
+    throws: "InfoNotFoundException if type not found"
+
+  class_type_info:
+    description: "Extended info for class types (subclass of TypeInfo)"
+    capabilities:
+      - "getStaticVariable(name: String)"
+      - "getInstanceVariable(name: String)"
+      - "getInstanceProperty(name: String)"
+      - "getInstanceFunction(name: String)"
+      - "Constructor access"
+
+  variable_info:
+    operations:
+      static_get: "info.getValue(): Option<Any>"
+      instance_get: "info.getValue(obj: Object): Option<Any>"
+      static_set: "info.setValue(value: Any): Unit"
+      instance_set: "info.setValue(obj: Object, value: Any): Unit"
+
+  limitations:
+    - "Only public members are accessible via reflection"
+    - "Private and protected members are not visible"
+    - "Cannot reflect uninstantiated generic types"
+    - "Performance is lower than direct access"

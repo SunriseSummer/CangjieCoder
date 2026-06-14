@@ -1,0 +1,157 @@
+# Cangjie Concurrency
+# Lightweight threads, synchronization, futures
+
+thread_model:
+  type: "M:N (M language threads on N native threads)"
+  description: |
+    Cangjie uses lightweight user-level threads (language threads)
+    scheduled cooperatively/preemptively onto a smaller set of OS threads.
+    Language threads are cheap to create and context-switch.
+
+thread_creation:
+  spawn:
+    syntax: |
+      let future = spawn {
+          // code runs in new lightweight thread
+          computeResult()
+      }
+    returns: "Future<T> where T is the lambda return type"
+    example: |
+      let f: Future<Int64> = spawn { =>
+          var sum = 0
+          for (i in 1..=100) { sum += i }
+          sum
+      }
+      println(f.get())  // blocks until done, prints 5050
+
+future:
+  type: "Future<T>"
+  methods:
+    get: |
+      func get(): T
+      // Blocks until thread completes; returns result
+      // Re-throws if thread threw an exception
+    get_timeout: |
+      func get(timeout: Duration): T
+      // Blocks up to timeout duration
+      // Throws TimeoutException if not completed in time
+    try_get: |
+      func tryGet(): Option<T>
+      // Non-blocking; returns None if not yet completed
+    cancel: |
+      func cancel(): Unit
+      // Sends cancellation request to the thread
+      // Thread must check hasPendingCancellation to cooperate
+    thread: |
+      prop thread: Thread
+      // Access the underlying Thread object
+
+thread_class:
+  static_members:
+    current_thread: "Thread.currentThread  // get current thread"
+  instance_members:
+    id: "thread.id  // unique Int64 identifier"
+    has_pending_cancellation: |
+      thread.hasPendingCancellation  // Bool
+      // Check in long-running loops for cooperative cancellation
+  sleep: |
+    import std.time.Duration
+    sleep(Duration.second * 2)  // sleep current thread 2 seconds
+  uncaught_handler: |
+    thread.handleUncaughtExceptionBy { (t: Thread, e: Exception) =>
+        println("Thread ${t.id} crashed: ${e}")
+    }
+
+synchronization:
+  atomic:
+    description: "Typed atomic wrappers for lock-free operations"
+    types: "AtomicInt8, AtomicInt16, AtomicInt32, AtomicInt64, AtomicUInt8-64, AtomicBool, AtomicReference<T>"
+    operations:
+      basic: ["load()", "store(val)", "swap(val)", "compareAndSwap(old, new): Bool"]
+      integer_only: |
+        fetchAdd(val), fetchSub(val)
+        fetchAnd(val), fetchOr(val), fetchXor(val)
+        // All return value BEFORE the operation
+    example: |
+      import std.sync.*
+      let counter = AtomicInt64(0)
+      spawn { => counter.fetchAdd(1) }
+      spawn { => counter.fetchAdd(1) }
+      sleep(Duration.millisecond * 100)
+      println(counter.load())  // 2
+
+  mutex:
+    type: "Mutex"
+    methods:
+      - "lock(): Unit       // block until acquired"
+      - "unlock(): Unit     // release lock"
+      - "tryLock(): Bool    // non-blocking attempt"
+    example: |
+      import std.sync.*
+      let mtx = Mutex()
+      mtx.lock()
+      try {
+          // critical section
+      } finally {
+          mtx.unlock()
+      }
+
+  synchronized:
+    syntax: |
+      synchronized(lockObject) {
+          // critical section
+      }
+    note: "Preferred over manual lock/unlock for safety"
+
+  condition_variable:
+    creation: "let cond = mtx.condition()  // mutex must be locked"
+    methods:
+      - "wait(): Unit                           // release lock and wait"
+      - "wait(timeout: Duration): Bool            // wait with timeout; false on timeout"
+      - "notify(): Unit                           // wake one waiting thread"
+      - "notifyAll(): Unit                        // wake all waiting threads"
+    pattern: |
+      // Producer-consumer pattern
+      import std.sync.*
+      let mtx = Mutex()
+      // Note: mtx must be locked before calling condition()
+      mtx.lock()
+      let cond = mtx.condition()
+      mtx.unlock()
+      var ready = false
+
+      // Consumer
+      spawn { =>
+          mtx.lock()
+          while (!ready) { cond.wait() }
+          mtx.unlock()
+      }
+
+      // Producer
+      spawn { =>
+          mtx.lock()
+          ready = true
+          cond.notifyAll()
+          mtx.unlock()
+      }
+
+  thread_local:
+    syntax: |
+      let tls = ThreadLocal<Int64>()  // from core package, no import needed
+    usage: |
+      tls.set(42)            // set thread-local value
+      tls.get()              // returns Option<T> — Some(v) or None
+
+cancellation:
+  mechanism: |
+    Cooperative cancellation:
+    1. Caller: future.cancel()
+    2. Thread checks: Thread.currentThread.hasPendingCancellation
+  example: |
+    let f = spawn { =>
+        while (!Thread.currentThread.hasPendingCancellation) {
+            doWork()
+        }
+    }
+    sleep(Duration.second)
+    f.cancel()

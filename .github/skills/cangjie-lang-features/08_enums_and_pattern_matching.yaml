@@ -1,0 +1,188 @@
+# Cangjie Enums and Pattern Matching
+# Algebraic data types, match expressions, patterns
+
+enum_definition:
+  syntax: |
+    enum EnumName {
+        | Constructor1
+        | Constructor2(Type1, Type2)
+        | ...                           // non-exhaustive marker (last only)
+    }
+
+  simple_enum: |
+    enum Color {
+        | Red
+        | Green
+        | Blue
+    }
+
+  parameterized_enum: |
+    enum Shape {
+        | Circle(Float64)                 // radius
+        | Rectangle(Float64, Float64)     // width, height
+        | Point
+    }
+
+  recursive_enum: |
+    enum Expr {
+        | Num(Int64)
+        | Add(Expr, Expr)
+        | Mul(Expr, Expr)
+    }
+
+  non_exhaustive: |
+    enum Status {
+        | Active
+        | Inactive
+        | ...                             // allows future additions
+    }
+    // match must include catch-all case for non-exhaustive enums
+
+  members: |
+    enum Direction {
+        | North | South | East | West
+
+        public func opposite(): Direction {
+            match (this) {
+                case North => South
+                case South => North
+                case East => West
+                case West => East
+            }
+        }
+
+        public static func cardinal(): Array<Direction> {
+            [North, South, East, West]
+        }
+    }
+
+  construction: |
+    let c = Color.Red
+    let s = Shape.Circle(5.0)
+    let e: Expr = Add(Num(1), Num(2))    // type context allows short form
+
+  equality: |
+    Enums do NOT support == by default.
+    Must manually implement operator func == with match:
+      enum Color {
+          | Red | Green | Blue
+          public operator func ==(rhs: Color): Bool {
+              match ((this, rhs)) {
+                  case (Red, Red) | (Green, Green) | (Blue, Blue) => true
+                  case _ => false
+              }
+          }
+      }
+
+pattern_matching:
+  match_expression:
+    syntax: |
+      match (expr) {
+          case pattern1 => result1
+          case pattern2 where guard => result2
+          case _ => defaultResult
+      }
+    type: "Expression — returns a value"
+    exhaustiveness: "All possible values must be covered"
+
+  pattern_types:
+    constant:
+      syntax: "case 42 =>"
+      types: "Integer, Float, Bool, Rune, String literals"
+      refutable: true
+
+    wildcard:
+      syntax: "case _ =>"
+      description: "Matches anything, binds nothing"
+      refutable: false
+
+    binding:
+      syntax: "case x =>"
+      description: "Matches anything, binds value to variable x"
+      refutable: false
+
+    tuple:
+      syntax: "case (p1, p2, ...) =>"
+      example: "case (0, y) => y  // bind second element"
+      refutable: "depends on sub-patterns"
+
+    type_pattern:
+      syntax: "case x: Type =>"
+      description: "Matches if runtime type is Type, binds to x"
+      refutable: true
+      example: |
+        match (obj) {
+            case s: String => println("String: ${s}")
+            case n: Int64 => println("Int: ${n}")
+            case _ => println("other")
+        }
+
+    enum_pattern:
+      syntax: "case Constructor(p1, p2) =>"
+      example: |
+        match (shape) {
+            case Circle(r) => 3.14 * r * r
+            case Rectangle(w, h) => w * h
+            case Point => 0.0
+        }
+
+    combined:
+      syntax: "case pat1 | pat2 =>"
+      example: "case 1 | 2 | 3 => \"small\""
+
+  pattern_guards:
+    syntax: "case pattern where boolExpr =>"
+    example: |
+      match (x) {
+          case n where n > 0 => "positive"
+          case n where n < 0 => "negative"
+          case _ => "zero"
+      }
+
+  nested_patterns: |
+    match (expr) {
+        case Add(Num(a), Num(b)) => a + b    // nested enum + binding
+        case Mul(x, Num(1)) => x              // nested with wildcard-like
+        case _ => expr
+    }
+
+if_let_while_let:
+  if_let:
+    syntax: |
+      if (let Some(value) <- optionalExpr) {
+          // value is bound here
+      } else {
+          // optionalExpr was None
+      }
+    note: "Works with any refutable pattern, not just Option"
+
+  while_let:
+    syntax: |
+      while (let Some(item) <- iterator.next()) {
+          // process item
+      }
+
+  pattern_in_let:
+    syntax: |
+      let (x, y) = (1, 2)           // tuple destructuring
+      let (_, second) = getTuple()   // discard first
+    note: "Only irrefutable patterns allowed in let bindings"
+
+  pattern_in_for:
+    syntax: |
+      for ((key, value) in map) {
+          println("${key} = ${value}")
+      }
+
+refutability:
+  irrefutable: |
+    Always matches — used in let, for-in:
+    - Wildcard: _
+    - Binding: x
+    - Tuple of irrefutable patterns: (x, _)
+    - Single-constructor enum with irrefutable sub-patterns
+  refutable: |
+    May fail to match — used in match/case, if-let, while-let:
+    - Constants: 42, "hello", true
+    - Type patterns: x: String
+    - Multi-constructor enum patterns: Some(x), None

@@ -1,0 +1,108 @@
+# Cangjie Structs
+# Value types, initialization, mutability
+
+struct_definition:
+  syntax: |
+    struct Name {
+        // member variables
+        // properties
+        // constructors
+        // member functions
+        // operator functions
+    }
+
+  value_type: |
+    Structs are value types:
+    - Assignment copies the entire struct
+    - Passed by value to functions
+    - No reference sharing (unlike class)
+
+  example: |
+    struct Point {
+        let x: Float64
+        let y: Float64
+
+        public init(x: Float64, y: Float64) {
+            this.x = x
+            this.y = y
+        }
+
+        public func distanceTo(other: Point): Float64 {
+            let dx = x - other.x
+            let dy = y - other.y
+            (dx * dx + dy * dy)
+        }
+    }
+
+constructors:
+  regular:
+    syntax: |
+      init(params) {
+          // must initialize all fields without defaults
+      }
+  primary:
+    syntax: |
+      struct Pair {
+          public Pair(let first: Int64, let second: Int64) {}
+      }
+    note: "Primary constructor name matches struct name, defined INSIDE body"
+  auto_generated: |
+    If all fields have default values and no explicit constructor,
+    a parameterless init() is auto-generated.
+    Note: No parameterized constructor is auto-generated.
+
+  static_initializer:
+    syntax: |
+      static init() {
+          // initialize static members
+      }
+
+mutability:
+  struct_binding:
+    immutable: "let p = Point(1.0, 2.0)  # cannot modify any field"
+    mutable: "var p = Point(1.0, 2.0)  # can modify var fields"
+    note: "Only var fields of a var-bound struct can be modified"
+
+  mut_functions:
+    syntax: |
+      mut func moveTo(newX: Float64, newY: Float64): Unit {
+          // can modify this struct's var fields
+      }
+    rules:
+      - "Declared with mut keyword before func"
+      - "Can only be called on var-bound struct instances"
+      - "Can modify var fields of the struct"
+      - "Cannot be static"
+      - "Cannot capture this in closures inside mut func"
+    example: |
+      struct Counter {
+          var count: Int64 = 0
+
+          public mut func increment(): Unit {
+              count += 1
+          }
+      }
+
+      var c = Counter()
+      c.increment()
+      println(c.count)  // 1
+
+  value_semantics_demo: |
+    struct MutPoint {
+        var x: Float64 = 0.0
+        var y: Float64 = 0.0
+    }
+    var a = MutPoint()
+    a.x = 1.0
+    a.y = 2.0
+    var b = a          // b is a copy of a
+    b.x = 10.0        // only b is modified
+    println(a.x)      // still 1.0
+
+restrictions:
+  - "No inheritance (structs cannot extend or be extended by other structs/classes)"
+  - "Can implement interfaces"
+  - "No recursive struct definitions (struct field cannot be same struct type)"
+  - "Cannot define struct for built-in primitive types"
+  - "No destructor (~init)"
+  - "No open/abstract/sealed/override/redef modifiers"

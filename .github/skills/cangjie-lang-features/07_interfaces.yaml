@@ -1,0 +1,112 @@
+# Cangjie Interfaces
+# Definition, implementation, default methods, sealed interfaces
+
+interface_definition:
+  syntax: |
+    interface InterfaceName {
+        // abstract function declarations
+        // default implementations
+        // abstract properties
+        // operator function declarations
+        // static members
+    }
+
+  example: |
+    interface Printable {
+        func display(): String
+    }
+
+    interface Serializable {
+        func serialize(): Array<Byte>
+        func deserialize(data: Array<Byte>): Unit {
+            // default implementation
+        }
+    }
+
+members:
+  abstract_functions: |
+    interface Drawable {
+        func draw(): Unit             // no body = abstract
+    }
+  default_implementations: |
+    interface Loggable {
+        func log(): Unit {
+            println(this.toString())   // default implementation
+        }
+    }
+  abstract_properties: |
+    interface Named {
+        prop name: String              // abstract getter
+        mut prop nickname: String      // abstract getter + setter
+    }
+  static_members: |
+    interface Factory<T> {
+        static func create(): T       // static abstract
+        static func version(): String { "1.0" }  // static default
+    }
+  operator_functions: |
+    interface Comparable<T> {
+        operator func <(rhs: T): Bool
+        operator func ==(rhs: T): Bool
+    }
+
+implementation:
+  by_class:
+    syntax: |
+      class MyClass <: InterfaceName {
+          public func requiredMethod(): Type { ... }
+      }
+    multiple: |
+      class MyClass <: Interface1 & Interface2 & Interface3 {
+          // implement all required members
+      }
+  by_struct:
+    syntax: |
+      struct MyStruct <: InterfaceName {
+          public func requiredMethod(): Type { ... }
+      }
+    mut_functions: |
+      interface Resettable {
+          mut func reset(): Unit
+      }
+      struct Counter <: Resettable {
+          var n: Int64 = 0
+          public mut func reset(): Unit { n = 0 }
+      }
+  by_extension:
+    syntax: |
+      extend ExistingType <: InterfaceName {
+          public func requiredMethod(): Type { ... }
+      }
+
+interface_inheritance:
+  single: |
+    interface AdvancedDrawable <: Drawable {
+        func drawWithEffects(): Unit
+    }
+  multiple: |
+    interface ReadWriteStream <: InputStream & OutputStream {
+        // inherits all members from both
+    }
+  diamond: |
+    If two parent interfaces provide the same default implementation,
+    the implementing class must override it to resolve ambiguity.
+
+sealed_interface:
+  syntax: |
+    sealed interface Shape {
+        func area(): Float64
+    }
+  rule: "Only types in the same package can implement a sealed interface"
+  use_case: "Controlled set of implementations for exhaustive matching"
+
+any_interface:
+  description: |
+    Any is the built-in top interface.
+    All non-interface types implicitly implement Any.
+    Can be used as a universal type parameter bound.
+
+access_rules:
+  interface_members: "Default to public; must be implemented as public"
+  interface_itself: "Can be public, internal, etc."
+  note: "All implemented members must be at least as visible as the interface"

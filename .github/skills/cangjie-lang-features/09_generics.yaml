@@ -1,0 +1,115 @@
+# Cangjie Generics
+# Generic types, functions, constraints, variance
+
+generic_functions:
+  syntax: |
+    func identity<T>(x: T): T { x }
+  with_constraint: |
+    func max<T>(a: T, b: T): T where T <: Comparable<T> {
+        if (a > b) { a } else { b }
+    }
+  multiple_type_params: |
+    func zip<A, B>(a: Array<A>, b: Array<B>): Array<(A, B)> { ... }
+
+generic_classes:
+  syntax: |
+    class Box<T> {
+        var value: T
+        public init(v: T) { value = v }
+        public func get(): T { value }
+    }
+  with_constraint: |
+    class SortedList<T> where T <: Comparable<T> {
+        // T must support comparison
+    }
+  static_limitation: |
+    Static members cannot reference type parameters:
+      class Foo<T> {
+          // static var x: T = ...  // ERROR
+          static var count: Int64 = 0  // OK
+      }
+
+generic_structs:
+  syntax: |
+    struct Pair<A, B> {
+        let first: A
+        let second: B
+        public init(first: A, second: B) {
+            this.first = first
+            this.second = second
+        }
+    }
+
+generic_interfaces:
+  syntax: |
+    interface Container<T> {
+        func add(item: T): Unit
+        func get(index: Int64): T
+        prop size: Int64
+    }
+  inheritance: |
+    interface MutableContainer<T> <: Container<T> {
+        func remove(index: Int64): T
+    }
+
+generic_enums:
+  syntax: |
+    enum Option<T> {
+        | Some(T)
+        | None
+    }
+  example: |
+    enum Result<T, E> {
+        | Ok(T)
+        | Err(E)
+    }
+
+constraints:
+  interface_bound:
+    syntax: "where T <: InterfaceName"
+    example: "func sort<T>(arr: Array<T>) where T <: Comparable<T>"
+  class_bound:
+    syntax: "where T <: ClassName"
+    note: "Only one direct class constraint per type parameter"
+  multiple_bounds:
+    syntax: "where T <: Interface1 & Interface2 & Interface3"
+    example: |
+      func process<T>(item: T) where T <: Serializable & Printable {
+          println(item.display())
+      }
+  multi_param_constraints:
+    syntax: "where K <: Hashable & Equatable<K>, V <: ToString"
+
+variance:
+  user_defined_generics: |
+    INVARIANT by default:
+      Box<Sub> is NOT a subtype of Box<Super>
+      Only Box<T> <: Box<T> when T is identical
+  built_in_variance:
+    tuples: |
+      COVARIANT in all positions:
+        (Sub1, Sub2) <: (Super1, Super2)
+    functions: |
+      CONTRAVARIANT in parameters, COVARIANT in return:
+        (Super) -> Sub  <:  (Sub) -> Super
+  rationale: |
+    Invariance prevents mutation-related type unsoundness:
+      If Box<Cat> <: Box<Animal> were allowed,
+      you could put a Dog into a Box<Cat> via Box<Animal> reference.
+
+type_parameter_scope:
+  description: |
+    Type parameters are in scope within the entire type body:
+    - Member variable types
+    - Method parameter/return types
+    - Constructor parameters
+    - Can be used in nested expressions
+  restriction: |
+    Cannot use uninstantiated generic type in expressions:
+      Box         // ERROR: type constructor, not a type
+      Box<Int64>  // OK: fully instantiated
+
+instantiation:
+  explicit: "let b = Box<Int64>(42)"
+  inferred: "let b = Box(42)  // T inferred as Int64"
+  partial: "Not supported — all type parameters must be resolved"

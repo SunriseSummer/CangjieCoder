@@ -1,0 +1,5 @@
+target/
+cjpm.lock
+__pycache__/
+*.pyc
+e2etest/**/*.log

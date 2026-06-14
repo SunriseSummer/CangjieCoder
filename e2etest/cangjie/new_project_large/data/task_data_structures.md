@@ -1,0 +1,1 @@
+请用仓颉语言创建一个数据结构与算法库项目，包含以下模块：泛型栈 Stack<T>（push/pop/peek/isEmpty/size）；泛型队列 Queue<T>（enqueue/dequeue/front/isEmpty/size）；排序算法（bubbleSort/insertionSort/quickSort）；搜索算法（linearSearch/binarySearch）；main 函数演示所有模块的使用。最终确保项目能编译通过。完成后回复 done。

@@ -1,0 +1,147 @@
+# Cangjie Functions
+# Declaration, lambdas, closures, operator overloading
+
+function_declaration:
+  basic:
+    syntax: |
+      func name(param1: Type1, param2: Type2): ReturnType {
+          body
+      }
+    example: |
+      func add(a: Int64, b: Int64): Int64 {
+          return a + b
+      }
+    implicit_return: "Last expression is return value if no explicit return"
+    unit_return: "func greet(): Unit { println(\"hi\") }  # `: Unit` optional"
+
+  named_parameters:
+    syntax: "func f(name!: Type)  # caller uses f(name: value)"
+    with_default: "func f(name!: Type = defaultValue)"
+    example: |
+      func connect(host: String, port!: Int64 = 8080): Unit {
+          println("${host}:${port}")
+      }
+      // call: connect("localhost", port: 9090)
+      // call: connect("localhost")  // uses default port 8080
+
+  return_type_inference: |
+    Return type can be omitted when inferable:
+      func double(x: Int64) { x * 2 }  // inferred as Int64
+
+  overloading:
+    rule: "Functions with same name but different parameter types or counts"
+    example: |
+      func show(x: Int64): Unit { println("Int: ${x}") }
+      func show(x: String): Unit { println("Str: ${x}") }
+
+  variadic_parameters:
+    note: "Only in foreign (C FFI) functions"
+
+  generic_functions:
+    syntax: |
+      func identity<T>(x: T): T { x }
+    with_constraint: |
+      func printAll<T>(items: Array<T>): Unit where T <: ToString {
+          for (item in items) {
+              println(item.toString())
+          }
+      }
+
+lambda_and_closures:
+  lambda_syntax:
+    typed: "{ x: Int64, y: Int64 => x + y }  # types on params directly"
+    inferred: "{ x => x * 2 }  # parameter type inferred from context"
+    no_param: "{ => println(\"hello\") }"
+    note: "Braces are always required; parameters come before =>"
+
+  trailing_lambda:
+    description: "When last parameter is a function, lambda can follow the call"
+    example: |
+      func doWork(callback: () -> Unit): Unit { callback() }
+      doWork { => println("working") }  // trailing lambda
+
+      func repeat(n: Int64, action: (Int64) -> Unit): Unit {
+          for (i in 0..n) { action(i) }
+      }
+      repeat(3) { i => println(i) }
+
+  closures:
+    description: "Lambdas capture variables from enclosing scope"
+    capture_rules:
+      - "Immutable (let) variables: captured freely"
+      - "Mutable (var) variables: lambda that captures var CANNOT be stored — must be called directly"
+    immutable_capture: |
+      let base = 100
+      let addBase = { x: Int64 => x + base }
+      println(addBase(5))  // 105
+    mutable_capture_restriction: |
+      var count = 0
+      // Cannot assign to variable: { => count += 1 }
+      // Must call directly or use a class wrapper:
+      { => count += 1 }()  // call directly — OK
+
+  function_types:
+    syntax: "(ParamTypes) -> ReturnType"
+    examples:
+      - "(Int64, Int64) -> Int64"
+      - "() -> Unit"
+      - "(String) -> Bool"
+
+pipeline_and_composition:
+  pipeline:
+    operator: "|>"
+    semantics: "x |> f  ≡  f(x)"
+    chaining: |
+      let result = data
+          |> parse
+          |> validate
+          |> transform
+  composition:
+    operator: "~>"
+    semantics: "f ~> g  ≡  { x => g(f(x)) }"
+    example: |
+      let process = parse ~> validate ~> transform
+      let result = process(data)
+
+operator_overloading:
+  syntax: |
+    operator func +(rhs: MyType): MyType { ... }
+    operator func ==(rhs: MyType): Bool { ... }
+  subscript_get: |
+    operator func [](index: Int64): T { ... }
+  subscript_set: |
+    operator func [](index: Int64, value!: T): Unit { ... }
+    // invoked as: obj[index] = value
+  call_operator: |
+    operator func ()(args: Type): ReturnType { ... }
+  example: |
+    struct Vec2 {
+        let x: Float64
+        let y: Float64
+        public init(x: Float64, y: Float64) {
+            this.x = x
+            this.y = y
+        }
+        public operator func +(rhs: Vec2): Vec2 {
+            Vec2(x + rhs.x, y + rhs.y)
+        }
+    }
+
+const_functions:
+  syntax: "const func name(params): Type { body }"
+  description: "Evaluated at compile time when called with const arguments"
+  allowed_in_body:
+    - "Const expressions only"
+    - "Calls to other const functions"
+    - "No side effects, no I/O"
+  example: |
+    const func square(x: Int64): Int64 { x * x }
+    const SIZE = square(10)  // evaluated at compile time: 100
+
+nested_functions:
+  description: "Functions can be defined inside other functions"
+  example: |
+    func outer(): Int64 {
+        func inner(x: Int64): Int64 { x * 2 }
+        return inner(21)
+    }

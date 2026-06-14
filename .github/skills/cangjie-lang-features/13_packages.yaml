@@ -1,0 +1,113 @@
+# Cangjie Package System
+# Packages, modules, imports, visibility
+
+package_structure:
+  package: |
+    Minimum compilation unit with its own namespace.
+    Declared in source files; maps to directory structure.
+  module: |
+    Collection of packages; minimum distribution unit.
+    At most one main() entry point per module.
+  source_layout: |
+    project_root/
+    ├── cjpm.toml          # project configuration
+    └── src/
+        ├── main.cj        # root package (package default)
+        ├── utils/
+        │   └── helper.cj  # package default.utils
+        └── models/
+            └── user.cj    # package default.models
+
+package_declaration:
+  syntax: |
+    package packageName           // simple package
+    package parent.child          // nested package
+  rules:
+    - "Must be first non-comment statement in file"
+    - "Must match relative path from src/ directory"
+    - "Folder name must match package name"
+    - "Files without package declaration belong to 'default' package"
+  examples:
+    - "// src/main.cj → package default (implicit)"
+    - "// src/utils/helper.cj → package default.utils"
+
+imports:
+  basic:
+    specific: "import pkg.ItemName"
+    wildcard: "import pkg.*"
+    multiple: |
+      import { pkg1.Foo, pkg2.Bar }
+      import pkg.{ Foo, Bar, Baz }
+  renaming:
+    package: "import longPkgName as short"
+    item: "import pkg.VeryLongName as Short"
+  re_export:
+    syntax: "public import pkg.*"
+    note: "Makes imported items visible to importers of current package"
+  rules:
+    - "Must appear after package declaration, before other declarations"
+    - "Cannot import from current package"
+    - "No circular dependencies between packages"
+    - "Imported names have lower precedence than local declarations"
+  core_package: |
+    Core types are implicitly imported (no import needed):
+    String, Array, Range, Int64, Bool, Option, println, etc.
+
+visibility:
+  access_modifiers:
+    private:
+      scope: "Same source file only"
+      use: "Implementation details"
+    internal:
+      scope: "Same package and its subpackages"
+      use: "Default for most declarations"
+      note: "This is the default access level"
+    protected:
+      scope: "Same module + subclass bodies in other modules"
+      use: "Framework extension points"
+    public:
+      scope: "Everywhere"
+      use: "Public API"
+
+  defaults:
+    package_declaration: public
+    import_declaration: private
+    type_declarations: internal
+    type_members: internal
+
+  constraint: |
+    A declaration's visibility cannot exceed the visibility of types it uses:
+      internal class Foo {}
+      public func makeFoo(): Foo {}  // ERROR: public func uses internal type
+    Exception: internal types can be used in public function/variable bodies.
+
+main_entry:
+  location: "Root package level only"
+  signatures:
+    - "main(): Int64 { ... }"
+    - "main(): Unit { ... }"
+    - "main(args: Array<String>): Int64 { ... }"
+    - "main(args: Array<String>): Unit { ... }"
+  rules:
+    - "At most one per module"
+    - "No access modifier allowed on main"
+    - "Not imported when package is used as a library"
+    - "Does not require func keyword"
+
+project_management:
+  tool: cjpm
+  config_file: cjpm.toml
+  commands:
+    init: "cjpm init             # create new project"
+    build: "cjpm build           # compile project"
+    run: "cjpm run               # build and execute"
+    test: "cjpm test             # run tests"
+    clean: "cjpm clean           # remove build artifacts"
+  config_example: |
+    [package]
+    name = "myapp"
+    cjc-version = "1.0.5"
+    output-type = "executable"
+
+    [dependencies]
+      # dependency declarations

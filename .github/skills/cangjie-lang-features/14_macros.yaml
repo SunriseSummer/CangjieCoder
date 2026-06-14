@@ -1,0 +1,115 @@
+# Cangjie Macros
+# Compile-time code transformation, tokens, AST manipulation
+
+macro_overview:
+  description: |
+    Macros transform code at compile time.
+    They operate on token sequences and/or AST nodes.
+    Defined in dedicated macro packages.
+  import: "import std.ast.*  // required for macro implementation"
+
+macro_packages:
+  declaration: |
+    macro package myMacros       // declares a macro package
+  rules:
+    - "Can only export public macros"
+    - "Other public declarations in macro packages cause errors"
+    - "Compiled separately: cjc files --compile-macro"
+  build_with_cjpm: |
+    # In cjpm.toml:
+    [package]
+    output-type = "macro"
+
+tokens:
+  token:
+    description: "Single lexical unit (keyword, identifier, literal, operator)"
+    construction: |
+      Token(TokenKind.IDENTIFIER, "myVar")
+      Token(TokenKind.INTEGER_LITERAL, "42")
+      Token(TokenKind.ADD)           // + operator
+    properties: ["kind: TokenKind", "value: String", "position info"]
+
+  tokens:
+    description: "Sequence of Token objects — main macro I/O type"
+    construction: |
+      Tokens()                        // empty
+      Tokens([token1, token2])        // from array
+    operations: |
+      tokens.size                     // count
+      tokens[i]                       // get by index
+      tokens1 + tokens2              // concatenation
+      tokens.dump()                   // debug print
+      tokens.toString()               // to source code string
+
+quote_expressions:
+  syntax: "quote( ... cangjie code ... )"
+  description: "Template for constructing Tokens from code fragments"
+  interpolation: |
+    let name = Token(TokenKind.IDENTIFIER, "x")
+    let code = quote(
+        let $(name) = 42
+    )
+    // produces tokens for: let x = 42
+  escaping:
+    - '"\(" for literal left paren'
+    - '"\)" for literal right paren'
+    - '"\$" for literal dollar sign'
+    - '"\@" for literal at sign'
+  interpolation_types: |
+    $(expr) accepts:
+    - Token, Tokens
+    - AST nodes (Expr, Decl, TypeNode, etc.)
+    - Primitives: Int, Float, Bool, Rune, String
+    - Array<T>, ArrayList<T> of above types
+
+macro_definition:
+  non_attribute:
+    syntax: |
+      public macro MyMacro(input: Tokens): Tokens {
+          // transform input tokens
+          return resultTokens
+      }
+    invocation: |
+      @MyMacro(some code here)
+      // or
+      let x = @MyMacro(expression)
+
+  attribute:
+    syntax: |
+      public macro MyAttr(input: Tokens, attrs: Tokens): Tokens {
+          // input: the annotated declaration
+          // attrs: the macro arguments
+          return transformedTokens
+      }
+    invocation: |
+      @MyAttr[arg1, arg2]
+      class MyClass { ... }
+
+ast_nodes:
+  description: "Typed representations of syntax elements"
+  base_classes: ["Node", "Expr", "Decl", "TypeNode", "Pattern"]
+  parsing:
+    - "parseExpr(tokens): Expr"
+    - "parseDecl(tokens): Decl"
+    - "parseType(tokens): TypeNode"
+    - "parsePattern(tokens): Pattern"
+  common_nodes:
+    BinaryExpr: "leftExpr, op, rightExpr"
+    FuncDecl: "identifier, funcParams, declType, block"
+    ClassDecl: "name, members, superTypes"
+    VarDecl: "identifier, declType, initializer"
+  example: |
+    public macro DoubleCall(input: Tokens): Tokens {
+        let expr = parseExpr(input)
+        quote(
+            $(expr)
+            $(expr)
+        )
+    }
+    // @DoubleCall(println("hi"))
+    // expands to: println("hi"); println("hi")
+
+macro_nesting:
+  description: |
+    Macros can call other macros in their expansion.
+    Inner macros are expanded after outer macro returns.

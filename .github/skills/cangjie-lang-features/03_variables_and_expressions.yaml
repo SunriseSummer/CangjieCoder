@@ -1,0 +1,122 @@
+# Cangjie Variables, Expressions, and Control Flow
+
+variables:
+  immutable:
+    keyword: let
+    syntax: "let name: Type = value"
+    inference: "let name = value  # type inferred"
+    note: "Cannot be reassigned after initialization"
+  mutable:
+    keyword: var
+    syntax: "var name: Type = value"
+    note: "Can be reassigned; struct fields must be var to be mutable"
+  compile_time_constant:
+    keyword: const
+    syntax: "const NAME: Type = constexpr"
+    allowed_types: "Int, UInt, Float, Bool, Rune, String"
+    note: "Evaluated at compile time; must use const expressions"
+
+  destructuring:
+    tuple: "let (x, y) = (1, 2)"
+    wildcard: "let (_, y) = (1, 2)  # ignore first element"
+
+  scope: |
+    Block-scoped with lexical scoping:
+    - Inner block can shadow outer variable
+    - Variable is accessible from point of declaration to end of block
+
+expressions:
+  everything_is_expression: |
+    In Cangjie, if/match/try are expressions that return values:
+      let x = if (cond) { 1 } else { 2 }
+      let y = match (v) { case 1 => "one"; case _ => "other" }
+      let z = try { riskyOp() } catch (_: Exception) { fallback }
+
+  if_expression:
+    syntax: |
+      if (condition) {
+          thenBranch
+      } else if (condition2) {
+          branch2
+      } else {
+          elseBranch
+      }
+    as_expression: "let x = if (a > b) { a } else { b }"
+    if_let: |
+      if (let Some(v) <- optionalExpr) {
+          // v is bound here
+      }
+
+  while_loop:
+    basic: |
+      while (condition) {
+          body
+      }
+    do_while: |
+      do {
+          body
+      } while (condition)
+    while_let: |
+      while (let Some(v) <- iter.next()) {
+          // v is bound each iteration
+      }
+
+  for_in_loop:
+    syntax: |
+      for (item in iterable) {
+          body
+      }
+    with_where: |
+      for (x in 0..10 where x % 2 == 0) {
+          println(x)  // 0, 2, 4, 6, 8
+      }
+    destructuring: |
+      for ((key, value) in pairs) {
+          println("${key}: ${value}")
+      }
+    range_iteration: |
+      for (i in 0..5) { }       // 0,1,2,3,4
+      for (i in 0..=5) { }      // 0,1,2,3,4,5
+
+  match_expression:
+    with_value: |
+      match (expr) {
+          case pattern1 => result1
+          case pattern2 where guard => result2
+          case _ => default
+      }
+    without_value: |
+      match {
+          case boolExpr1 => result1
+          case boolExpr2 => result2
+          case _ => default
+      }
+    combined_patterns: |
+      match (x) {
+          case 1 | 2 | 3 => "small"
+          case _ => "other"
+      }
+    exhaustiveness: "Must cover all cases; use _ for catch-all"
+
+  loop_control:
+    break: "break  # exits innermost loop"
+    continue: "continue  # skips to next iteration"
+    note: "No labeled break/continue"
+
+  conditional_expressions:
+    ternary_like: "let x = if (cond) { a } else { b }  # if is an expression"
+
+  range_expressions:
+    half_open: "1..5      # [1, 5)"
+    closed: "1..=5     # [1, 5]"
+    countable: "Range works with any type implementing Countable<T>"
+
+  assignment:
+    simple: "x = value"
+    compound: "x += 1; x -= 1; x *= 2; x /= 2; x %= 3"
+    note: "Assignment is a statement (Unit type), not an expression"
+
+  string_interpolation:
+    syntax: '"text ${expression} more text"'
+    arbitrary_expr: '"result is ${a + b * c}"'
+    method_call: '"length is ${s.size}"'
