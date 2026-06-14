@@ -7,10 +7,11 @@
 ## 核心功能
 
 - **Agent 模式**：ReAct 风格的多轮工具调用循环，AI 自主规划并执行编程任务
-- **9 个内置工具**：文件读写、目录浏览、glob/grep 搜索、命令执行、任务清单
+- **10 个内置工具**：文件读写、目录浏览、glob/grep 搜索、命令执行、任务清单、Skill 加载
 - **三档审批策略**：`auto`（全部放行）/ `default`（敏感工具询问确认）/ `readonly`（禁止写操作）
 - **文件变更追踪**：`/diff` 查看变更、`/undo` 逐步回滚，基于栈式快照
 - **历史压缩**：`/compact` 本地确定性算法压缩对话历史，保持协议完整性
+- **Skills 系统**：自动发现项目 `.agents/skills/` 目录，懒加载领域知识
 - **多服务商支持**：华为云 MaaS、Moonshot、DeepSeek、智谱 GLM、自定义 OpenAI 兼容接口
 - **思考模型兼容**：支持 `reasoning_content` 字段回传（kimi-k2.6、DeepSeek R1 等）
 - **流式聊天**：`chat` 模式保留 SSE 流式输出，适合纯问答
@@ -96,6 +97,7 @@ target/release/bin/main --insecure-tls
 | `/approve [auto\|default\|readonly]` | 设置审批策略 |
 | `/tools` | 列出已注册工具 |
 | `/todo` | 查看任务清单 |
+| `/skills` | 重新扫描 Skills |
 | `/diff` | 查看文件变更 |
 | `/undo` | 撤销上一次文件变更 |
 | `/compact` | 压缩对话历史 |
@@ -117,13 +119,33 @@ target/release/bin/main --insecure-tls
 | `run_bash` | sensitive | 执行 shell 命令 |
 | `todo_write` | safe | 写入任务清单 |
 | `todo_read` | safe | 读取任务清单 |
+| `use_skill` | safe | 按需加载 Skill 正文 |
+
+### Skills 目录约定
+
+```
+<project>/.agents/skills/<skill-name>/SKILL.md
+```
+
+SKILL.md 须包含 YAML frontmatter：
+
+```yaml
+---
+name: <skill-name>
+description: "<description>"
+---
+<正文>
+```
+
+启动时仅读取 frontmatter 注入系统提示，AI 通过 `use_skill` 按需加载完整正文。
 
 ## 测试
 
 ```bash
-cjpm test                                              # 单元测试
+cjpm test                                              # 单元测试（199 用例）
 python3 e2etest/run_all.py --mock-only                 # Mock E2E（4 场景）
 python3 e2etest/run_all.py --provider zhipu             # 实战 E2E（需 API Key）
+python3 e2etest/run_all.py --cangjie --provider deepseek # 仓颉 AI Coding（需 SDK + API Key）
 ```
 
 详见 [e2etest/README.md](e2etest/README.md)。
@@ -137,11 +159,12 @@ coder/
 │   ├── main.cj                  # 入口
 │   ├── app/                     # REPL 主流程与初始化
 │   ├── agent/                   # Agent Loop、审批、系统提示
-│   ├── tools/                   # 工具接口与 9 个内置工具
+│   ├── tools/                   # 工具接口与 10 个内置工具
 │   ├── httpx/                   # HTTP 客户端与 OpenAI 协议
 │   ├── commands/                # 斜杠命令
 │   ├── config/                  # 配置持久化
 │   ├── provider/                # 服务商预设（5 个，含 custom）
-│   └── session/                 # 流式聊天会话
+│   ├── session/                 # 流式聊天会话
+│   └── skillset/                # Skills 加载
 └── e2etest/                     # 端到端测试（Python）
 ```
